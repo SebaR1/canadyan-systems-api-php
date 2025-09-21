@@ -225,18 +225,139 @@ class Usuario {
     /**
      * Listar todos los usuarios (para admin)
      */
-    public function readAll() {
+    public function readAll($page = 1, $limit = 10, $search = '') {
+        $offset = ($page - 1) * $limit;
+        
+        // Query base
         $query = "SELECT u.id, u.nombre, u.apellido, u.razon_social_empresa, u.cuit,
                          u.correo_electronico, u.celular, u.ciudad, u.provincia,
                          u.email_verificado, tu.nombre as tipo_usuario_nombre, u.created_at
                   FROM " . $this->table_name . " u
-                  LEFT JOIN tipos_usuario tu ON u.tipo_usuario_id = tu.id
-                  ORDER BY u.created_at DESC";
+                  LEFT JOIN tipos_usuario tu ON u.tipo_usuario_id = tu.id";
         
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute();
+        // Agregar búsqueda si se proporciona
+        $where_clause = "";
+        if (!empty($search)) {
+            $where_clause = " WHERE (u.nombre LIKE :search OR u.apellido LIKE :search 
+                                   OR u.correo_electronico LIKE :search OR u.cuit LIKE :search
+                                   OR u.razon_social_empresa LIKE :search)";
+        }
         
-        return $stmt;
+        // Query para contar total
+        $count_query = "SELECT COUNT(*) as total FROM " . $this->table_name . " u" . $where_clause;
+        
+        // Query final con paginación
+        $query .= $where_clause . " ORDER BY u.created_at DESC LIMIT :limit OFFSET :offset";
+        
+        try {
+            // Obtener total de registros
+            $count_stmt = $this->conn->prepare($count_query);
+            if (!empty($search)) {
+                $search_param = "%{$search}%";
+                $count_stmt->bindParam(":search", $search_param);
+            }
+            $count_stmt->execute();
+            $total = $count_stmt->fetch(PDO::FETCH_ASSOC)['total'];
+            
+            // Obtener registros paginados
+            $stmt = $this->conn->prepare($query);
+            if (!empty($search)) {
+                $search_param = "%{$search}%";
+                $stmt->bindParam(":search", $search_param);
+            }
+            $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
+            $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $usuarios = [];
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $usuarios[] = $row;
+            }
+            
+            return [
+                'data' => $usuarios,
+                'total' => $total
+            ];
+            
+        } catch (Exception $e) {
+            error_log("Error en readAll: " . $e->getMessage());
+            return [
+                'data' => [],
+                'total' => 0
+            ];
+        }
+    }
+    
+    /**
+     * Obtener estadísticas de usuarios (para admin)
+     */
+    public function getStats() {
+        try {
+            $stats = [];
+            
+            // Total de usuarios
+            $query = "SELECT COUNT(*) as total FROM " . $this->table_name;
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $stats['totalUsers'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+            
+            // Usuarios registrados hoy
+            $query = "SELECT COUNT(*) as total FROM " . $this->table_name . " 
+                      WHERE DATE(created_at) = CURDATE()";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $stats['newUsersToday'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+            
+            // Usuarios con email verificado (activos)
+            $query = "SELECT COUNT(*) as total FROM " . $this->table_name . " 
+                      WHERE email_verificado = 1";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $stats['activeUsers'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+            
+            // Usuarios por tipo
+            $query = "SELECT tu.nombre as tipo, COUNT(*) as cantidad 
+                      FROM " . $this->table_name . " u
+                      LEFT JOIN tipos_usuario tu ON u.tipo_usuario_id = tu.id
+                      GROUP BY u.tipo_usuario_id, tu.nombre";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $userTypes = [];
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $userTypes[] = $row;
+            }
+            $stats['userTypes'] = $userTypes;
+            
+            // Usuarios registrados en los últimos 7 días
+            $query = "SELECT DATE(created_at) as fecha, COUNT(*) as cantidad 
+                      FROM " . $this->table_name . " 
+                      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+                      GROUP BY DATE(created_at)
+                      ORDER BY fecha DESC";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $weeklyStats = [];
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $weeklyStats[] = $row;
+            }
+            $stats['weeklyRegistrations'] = $weeklyStats;
+            
+            // Para compatibilidad con el frontend, agregar totalProducts
+            $stats['totalProducts'] = 0; // Se actualizará cuando implementes productos
+            
+            return $stats;
+            
+        } catch (Exception $e) {
+            error_log("Error en getStats: " . $e->getMessage());
+            return [
+                'totalUsers' => 0,
+                'newUsersToday' => 0,
+                'activeUsers' => 0,
+                'totalProducts' => 0,
+                'userTypes' => [],
+                'weeklyRegistrations' => []
+            ];
+        }
     }
     
     /**

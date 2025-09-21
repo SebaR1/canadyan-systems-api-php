@@ -134,14 +134,19 @@ class UsuarioController {
             $token = $this->generateToken($userData['id']);
             
             // Guardar sesión
-            session_start();
+            $this->startSessionWithCORS();
+
             $_SESSION['user_id'] = $userData['id'];
             $_SESSION['user_email'] = $userData['correo_electronico'];
             $_SESSION['user_type'] = $userData['tipo_usuario_id'];
             
             // Remover contraseña de la respuesta
             unset($userData['password']);
-            
+
+            error_log("DEBUG LOGIN - Session ID: " . session_id());
+            error_log("DEBUG LOGIN - Session data: " . print_r($_SESSION, true));
+            error_log("DEBUG LOGIN - Session status: " . session_status());
+                        
             Response::success('Login exitoso', 200, [
                 'usuario' => $userData,
                 'token' => $token,
@@ -322,7 +327,7 @@ class UsuarioController {
      */
     public function logout() {
         try {
-            session_start();
+            $this->startSessionWithCORS();
             session_destroy();
             
             Response::success('Logout exitoso', 200);
@@ -372,10 +377,182 @@ class UsuarioController {
     }
     
     /**
+     * Listar todos los usuarios (Solo Admin)
+     * GET /api/routes/usuarios.php?action=list-all
+     */
+    public function listAll() {
+        try {
+            // Verificar que sea GET
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+            
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+            
+            // Obtener parámetros de paginación
+            $page = $_GET['page'] ?? 1;
+            $limit = $_GET['limit'] ?? 10;
+            $search = $_GET['search'] ?? '';
+            
+            $usuario = new Usuario();
+            $usuarios = $usuario->readAll($page, $limit, $search);
+            
+            Response::success('Usuarios obtenidos', 200, [
+                'usuarios' => $usuarios['data'],
+                'pagination' => [
+                    'page' => $page,
+                    'limit' => $limit,
+                    'total' => $usuarios['total'],
+                    'pages' => ceil($usuarios['total'] / $limit)
+                ]
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("Error en listAll: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+    
+    /**
+     * Crear usuario desde panel de admin
+     * POST /api/routes/usuarios.php?action=admin-create
+     */
+    public function adminCreate() {
+        try {
+            // Verificar que sea POST
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+            
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+            
+            // Obtener datos JSON
+            $input = json_decode(file_get_contents('php://input'), true);
+            
+            if (!$input) {
+                Response::error('Datos JSON inválidos', 400);
+                return;
+            }
+            
+            // Crear instancia del modelo
+            $usuario = new Usuario();
+            
+            // Asignar valores
+            $usuario->nombre = $input['nombre'] ?? '';
+            $usuario->apellido = $input['apellido'] ?? '';
+            $usuario->razon_social_empresa = $input['razonSocialEmpresa'] ?? '';
+            $usuario->cuit = $input['cuit'] ?? '';
+            $usuario->correo_electronico = $input['correoElectronico'] ?? '';
+            $usuario->celular = $input['celular'] ?? '';
+            $usuario->ciudad = $input['ciudad'] ?? '';
+            $usuario->direccion = $input['direccion'] ?? '';
+            $usuario->provincia = $input['provincia'] ?? '';
+            $usuario->cod_imagen = $input['imagen'] ?? null;
+            $usuario->password = $input['password'] ?? '';
+            $usuario->tipo_usuario_id = $input['tipoUsuario'] ?? 1; // Admin puede asignar tipo
+            
+            // Validar datos
+            $errors = $usuario->validate();
+            if (!empty($errors)) {
+                Response::error('Errores de validación', 400, ['errors' => $errors]);
+                return;
+            }
+            
+            // Verificar si el email ya existe
+            if ($usuario->findByEmail($usuario->correo_electronico)) {
+                Response::error('El correo electrónico ya está registrado', 409);
+                return;
+            }
+            
+            // Verificar si el CUIT ya existe
+            if ($usuario->findByCuit($usuario->cuit)) {
+                Response::error('El CUIT ya está registrado', 409);
+                return;
+            }
+            
+            // Crear usuario
+            if ($usuario->create()) {
+                // Obtener datos del usuario creado (sin contraseña)
+                $usuario_data = $usuario->readOne();
+                unset($usuario_data['password']);
+                
+                Response::success('Usuario creado exitosamente por administrador', 201, [
+                    'usuario' => $usuario_data
+                ]);
+            } else {
+                Response::error('Error al crear el usuario', 500);
+            }
+            
+        } catch (Exception $e) {
+            error_log("Error en adminCreate: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+    
+    /**
+     * Obtener estadísticas de usuarios (Solo Admin)
+     * GET /api/routes/usuarios.php?action=stats
+     */
+    public function getStats() {
+        try {
+            // Verificar que sea GET
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+            
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+            
+            $usuario = new Usuario();
+            $stats = $usuario->getStats();
+            
+            Response::success('Estadísticas obtenidas', 200, ['stats' => $stats]);
+            
+        } catch (Exception $e) {
+            error_log("Error en getStats: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+    
+    /**
+     * Verificar si el usuario actual es administrador
+     */
+    private function isAdmin() {
+        $this->startSessionWithCORS();
+
+        $user_type = $_SESSION['user_type'] ?? null;
+        return $user_type == 2; // Asumiendo que tipo 2 = Admin
+    }
+    
+    /**
+     * Verificar si el usuario actual está autenticado
+     */
+    private function isAuthenticated() {
+        $this->startSessionWithCORS();
+
+        return isset($_SESSION['user_id']);
+    }
+    
+    /**
      * Obtener ID del usuario autenticado
      */
     private function getAuthenticatedUserId() {
-        session_start();
+        $this->startSessionWithCORS();
+
         return $_SESSION['user_id'] ?? null;
     }
     
@@ -398,6 +575,25 @@ class UsuarioController {
         }
         
         return false;
+    }
+
+    /**
+     * Configurar sesión con parámetros CORS consistentes
+     */
+    private function startSessionWithCORS() {
+        if (session_status() === PHP_SESSION_NONE) {
+            // Configurar cookies ANTES de session_start()
+            session_set_cookie_params([
+                'lifetime' => 0,
+                'path' => '/',
+                'domain' => '',
+                'secure' => false, // Cambiar a true en producción con HTTPS
+                'httponly' => true,
+                'samesite' => 'Lax' // Cambiar a 'Strict' si es necesario
+            ]);
+            
+            session_start();
+        }
     }
 }
 ?>

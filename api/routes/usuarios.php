@@ -15,14 +15,81 @@
 
 // Headers CORS y configuración inicial
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *'); // Cambiar por tu dominio en producción
+
+// CORS headers para permitir credenciales desde localhost:3000
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if ($origin === 'http://localhost:3000' || $origin === 'http://127.0.0.1:3000') {
+    header('Access-Control-Allow-Origin: ' . $origin);
+} else {
+    header('Access-Control-Allow-Origin: http://localhost:3000');
+}       
+
+// ESTAS LÍNEAS FALTABAN:
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Credentials: true'); // ← LA MÁS IMPORTANTE
 
-// Manejar preflight requests
+// CONFIGURACIÓN DE SESIONES:
+if (session_status() === PHP_SESSION_NONE) {
+    // Configurar cookies de sesión para desarrollo con CORS
+
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'domain' => '',
+        'secure' => false,      // En desarrollo HTTP
+        'httponly' => true,
+        'samesite' => 'Lax' // Cambiar a 'None' en producción con HTTP
+    ]);
+
+
+ini_set('session.cookie_samesite', 'Lax');   // ✅
+    ini_set('session.cookie_secure', '0'); // En producción cambiar a '1' (requiere HTTPS)
+    ini_set('session.cookie_httponly', '1');
+    ini_set('session.cookie_path', '/'); // AGREGAR ESTA LÍNEA
+    
+    session_start();
+}
+
+// Manejar preflight OPTIONS request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    header('Access-Control-Max-Age: 86400');
     http_response_code(200);
+    exit();
+}
+
+// ENDPOINT DE DEBUG (opcional, para verificar sesión)
+if (isset($_GET['action']) && $_GET['action'] === 'debug-session') {
+    $debug_info = [
+        'session_status' => session_status(),
+        'session_id' => session_id(),
+        'session_data' => $_SESSION ?? [],
+        'cookies' => $_COOKIE ?? [],
+        'user_id' => $_SESSION['user_id'] ?? 'NO_SET',
+        'user_email' => $_SESSION['user_email'] ?? 'NO_SET'
+    ];
+    
+    echo json_encode($debug_info, JSON_PRETTY_PRINT);
+    exit();
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'test-write-session') {
+    // Limpiar y escribir sesión de prueba
+    $_SESSION = [];
+    $_SESSION['test_data'] = 'SESION_FUNCIONA';
+    $_SESSION['timestamp'] = time();
+    $_SESSION['session_id'] = session_id();
+    
+    // Forzar escritura de sesión
+    session_write_close();
+    session_start();
+    
+    echo json_encode([
+        'message' => 'Sesión escrita',
+        'session_id' => session_id(),
+        'session_data' => $_SESSION,
+        'cookie_params' => session_get_cookie_params(),
+        'save_path' => session_save_path()
+    ], JSON_PRETTY_PRINT);
     exit();
 }
 
@@ -197,8 +264,95 @@ try {
             break;
             
         /**
+         * Listar todos los usuarios (Solo Admin)
+         * GET /api/routes/usuarios.php?action=list-all
+         * 
+         * Query params:
+         * - page: número de página (default: 1)
+         * - limit: usuarios por página (default: 10)
+         * - search: término de búsqueda
+         */
+        case 'list-all':
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                Response::error('Método no permitido. Use GET.', 405);
+                break;
+            }
+            $controller->listAll();
+            break;
+            
+        /**
+         * Crear usuario desde panel de admin
+         * POST /api/routes/usuarios.php?action=admin-create
+         * 
+         * Body JSON:
+         * {
+         *   "nombre": "Juan",
+         *   "apellido": "Pérez",
+         *   "razonSocialEmpresa": "Empresa SRL",
+         *   "cuit": "20-12345678-9",
+         *   "correoElectronico": "juan@empresa.com",
+         *   "celular": "11-1234-5678",
+         *   "ciudad": "Buenos Aires",
+         *   "direccion": "Av. Corrientes 1234",
+         *   "provincia": "Buenos Aires",
+         *   "imagen": "codigo_imagen.jpg",
+         *   "password": "mi_password",
+         *   "tipoUsuario": 1
+         * }
+         */
+        case 'admin-create':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido. Use POST.', 405);
+                break;
+            }
+            $controller->adminCreate();
+            break;
+            
+        /**
+         * Obtener estadísticas de usuarios (Solo Admin)
+         * GET /api/routes/usuarios.php?action=stats
+         */
+        case 'stats':
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                Response::error('Método no permitido. Use GET.', 405);
+                break;
+            }
+            $controller->getStats();
+            break;
+
+        // AGREGAR ESTE CASO AL SWITCH:
+        case 'debug-profile':
+            $debug_info = [
+                'method' => $_SERVER['REQUEST_METHOD'],
+                'session_status' => session_status(),
+                'session_id' => session_id(),
+                'session_data' => $_SESSION ?? [],
+                'cookies_received' => $_COOKIE ?? [],
+                'user_id' => $_SESSION['user_id'] ?? 'NOT_SET',
+                'user_email' => $_SESSION['user_email'] ?? 'NOT_SET',
+                'headers' => getallheaders(),
+                'cookie_params' => session_get_cookie_params(),
+                'ini_settings' => [
+                    'samesite' => ini_get('session.cookie_samesite'),
+                    'secure' => ini_get('session.cookie_secure'),
+                    'httponly' => ini_get('session.cookie_httponly')
+                ]
+            ];
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Debug info',
+                'data' => $debug_info
+            ], JSON_PRETTY_PRINT);
+            exit();
+            break;
+
+            
+        /**
          * Acción no encontrada
          */
+
+        
         default:
             Response::error('Acción no válida', 400, [
                 'available_actions' => [
@@ -209,7 +363,10 @@ try {
                     'change-password',
                     'logout',
                     'verify-email',
-                    'test'
+                    'test',
+                    'list-all',
+                    'admin-create',
+                    'stats'
                 ],
                 'usage' => 'Agregue ?action=nombre_accion a la URL'
             ]);
