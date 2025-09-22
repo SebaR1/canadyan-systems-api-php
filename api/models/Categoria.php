@@ -129,12 +129,18 @@ class Categoria {
     /**
      * Construir estructura jerárquica
      */
-    private function buildTree($categories, $parentId = null) {
+    private function buildTree($categories, $parentId = null, $processed = []) {
         $tree = [];
         
         foreach ($categories as $category) {
+            // Prevenir bucles infinitos
+            if (in_array($category['id'], $processed)) {
+                continue;
+            }
+            
             if ($category['parent_id'] == $parentId) {
-                $category['children'] = $this->buildTree($categories, $category['id']);
+                $processed[] = $category['id'];
+                $category['children'] = $this->buildTree($categories, $category['id'], $processed);
                 $tree[] = $category;
             }
         }
