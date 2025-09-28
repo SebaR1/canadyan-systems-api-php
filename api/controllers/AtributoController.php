@@ -390,6 +390,7 @@ class AtributoController {
             $filtros = $input['filtros'] ?? [];
             $page = isset($input['page']) ? intval($input['page']) : 1;
             $limit = isset($input['limit']) ? intval($input['limit']) : 10;
+            $categoria_id = isset($input['categoria_id']) ? intval($input['categoria_id']) : null; // ← NUEVO PARÁMETRO
             
             // Validar parámetros
             if ($page < 1) $page = 1;
@@ -398,7 +399,7 @@ class AtributoController {
             $offset = ($page - 1) * $limit;
             
             $productoAtributo = new ProductoAtributo();
-            $productos = $productoAtributo->filtrarProductosPorAtributos($filtros, $limit, $offset);
+            $productos = $productoAtributo->filtrarProductosPorAtributos($filtros, $limit, $offset, $categoria_id); // ← PASAR CATEGORÍA
             
             Response::success('Productos filtrados exitosamente', 200, [
                 'productos' => $productos,
