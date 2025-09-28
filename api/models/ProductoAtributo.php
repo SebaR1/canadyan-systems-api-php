@@ -1,6 +1,6 @@
 <?php
 /**
- * Modelo ProductoAtributo
+ * Modelo ProductoAtributo - CORREGIDO
  * Canadian Sistemas API
  */
 
@@ -19,6 +19,179 @@ class ProductoAtributo {
     public function __construct() {
         $database = new Database();
         $this->conn = $database->getConnection();
+    }
+    
+    /**
+     * Procesar datos de producto para asegurar tipos correctos
+     */
+    private function processProductData($data) {
+        if (!$data) return $data;
+        
+        // Si es un array de productos
+        if (isset($data[0])) {
+            return array_map([$this, 'processSingleProduct'], $data);
+        }
+        
+        // Si es un solo producto
+        return $this->processSingleProduct($data);
+    }
+    
+    /**
+     * Procesar un solo producto para asegurar tipos correctos
+     */
+    private function processSingleProduct($producto) {
+        if (!$producto) return $producto;
+        
+        // Convertir precio a float o null
+        if (isset($producto['precio'])) {
+            $producto['precio'] = !empty($producto['precio']) ? floatval($producto['precio']) : null;
+        }
+        
+        // Asegurar que stock sea integer
+        if (isset($producto['stock'])) {
+            $producto['stock'] = intval($producto['stock']);
+        }
+        
+        // Asegurar que activo sea boolean (1/0)
+        if (isset($producto['activo'])) {
+            $producto['activo'] = intval($producto['activo']);
+        }
+        
+        // Asegurar IDs como integers
+        if (isset($producto['id'])) {
+            $producto['id'] = intval($producto['id']);
+        }
+        
+        if (isset($producto['categoria_id'])) {
+            $producto['categoria_id'] = intval($producto['categoria_id']);
+        }
+        
+        return $producto;
+    }
+    
+    /**
+     * Filtrar productos por múltiples atributos - VERSIÓN CORREGIDA Y SIMPLIFICADA
+     */
+    public function filtrarProductosPorAtributos($filtros, $limit = null, $offset = 0) {
+        try {
+            if (empty($filtros)) {
+                // Si no hay filtros, devolver productos básicos
+                return $this->getProductosBasicos($limit, $offset);
+            }
+            
+            // Preparar arrays para la consulta
+            $whereConditions = [];
+            $params = [];
+            $paramIndex = 1;
+            
+            // Construir condiciones WHERE para cada atributo
+            foreach ($filtros as $atributo_id => $valores) {
+                if (!is_array($valores) || empty($valores)) continue;
+                
+                $atributo_id = intval($atributo_id); // Asegurar que sea entero
+                $placeholders = [];
+                
+                foreach ($valores as $valor) {
+                    if (empty($valor)) continue;
+                    $placeholders[] = "?";
+                    $params[] = trim($valor); // Limpiar valor
+                }
+                
+                if (!empty($placeholders)) {
+                    $placeholdersStr = implode(',', $placeholders);
+                    $whereConditions[] = "(pa.atributo_id = {$atributo_id} AND pa.valor IN ({$placeholdersStr}))";
+                }
+            }
+            
+            if (empty($whereConditions)) {
+                return $this->getProductosBasicos($limit, $offset);
+            }
+            
+            $whereClause = implode(' OR ', $whereConditions);
+            
+            // Query principal - más simple pero efectiva
+            $query = "SELECT DISTINCT 
+                        p.id, p.nombre, p.descripcion, p.precio, p.stock, 
+                        p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                        c.nombre as categoria_nombre
+                      FROM productos p
+                      INNER JOIN " . $this->table_name . " pa ON p.id = pa.producto_id
+                      LEFT JOIN categorias c ON p.categoria_id = c.id
+                      WHERE p.activo = 1 AND ({$whereClause})";
+            
+            // Si hay múltiples atributos, necesitamos que coincidan TODOS
+            if (count($filtros) > 1) {
+                $query .= " AND p.id IN (
+                            SELECT producto_id 
+                            FROM " . $this->table_name . " 
+                            WHERE ({$whereClause})
+                            GROUP BY producto_id 
+                            HAVING COUNT(DISTINCT atributo_id) >= " . count($filtros) . "
+                          )";
+                // Duplicar parámetros para la subconsulta
+                $params = array_merge($params, $params);
+            }
+            
+            $query .= " ORDER BY p.nombre ASC";
+            
+            if ($limit) {
+                $query .= " LIMIT {$limit} OFFSET {$offset}";
+            }
+            
+            $stmt = $this->conn->prepare($query);
+            
+            // Bind todos los parámetros
+            foreach ($params as $index => $value) {
+                $stmt->bindValue($index + 1, $value);
+            }
+            
+            $stmt->execute();
+            $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Procesar datos para asegurar tipos correctos
+            return $this->processProductData($productos);
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO al filtrar productos por atributos: " . $e->getMessage());
+            error_log("Query: " . ($query ?? 'N/A'));
+            return [];
+        } catch (Exception $e) {
+            error_log("Error general al filtrar productos por atributos: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Obtener productos básicos (sin filtros)
+     */
+    private function getProductosBasicos($limit = null, $offset = 0) {
+        try {
+            $query = "SELECT DISTINCT 
+                        p.id, p.nombre, p.descripcion, p.precio, p.stock, 
+                        p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                        c.nombre as categoria_nombre
+                      FROM productos p
+                      LEFT JOIN categorias c ON p.categoria_id = c.id
+                      WHERE p.activo = 1
+                      ORDER BY p.nombre ASC";
+            
+            if ($limit) {
+                $query .= " LIMIT {$limit} OFFSET {$offset}";
+            }
+            
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            return $this->processProductData($productos);
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO al obtener productos básicos: " . $e->getMessage());
+            return [];
+        } catch (Exception $e) {
+            error_log("Error general al obtener productos básicos: " . $e->getMessage());
+            return [];
+        }
     }
     
     /**
@@ -149,7 +322,12 @@ class ProductoAtributo {
             $stmt->bindParam(':producto_id', $producto_id);
             $stmt->bindParam(':atributo_id', $atributo_id);
             
-            return $stmt->execute();
+            if ($stmt->execute()) {
+                return true;
+            }
+            
+            error_log("Error al actualizar producto_atributo: No se pudo ejecutar la query");
+            return false;
             
         } catch (PDOException $e) {
             error_log("Error PDO al actualizar producto_atributo: " . $e->getMessage());
@@ -163,16 +341,21 @@ class ProductoAtributo {
     /**
      * Eliminar atributo de un producto
      */
-    public function delete() {
+    public function delete($producto_id, $atributo_id) {
         try {
             $query = "DELETE FROM " . $this->table_name . " 
                       WHERE producto_id = ? AND atributo_id = ?";
             
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(1, $this->producto_id);
-            $stmt->bindParam(2, $this->atributo_id);
+            $stmt->bindParam(1, $producto_id);
+            $stmt->bindParam(2, $atributo_id);
             
-            return $stmt->execute();
+            if ($stmt->execute()) {
+                return true;
+            }
+            
+            error_log("Error al eliminar producto_atributo: No se pudo ejecutar la query");
+            return false;
             
         } catch (PDOException $e) {
             error_log("Error PDO al eliminar producto_atributo: " . $e->getMessage());
@@ -184,66 +367,9 @@ class ProductoAtributo {
     }
     
     /**
-     * Eliminar todos los atributos de un producto
+     * Verificar si existe una relación producto-atributo
      */
-    public function deleteByProducto($producto_id) {
-        try {
-            $query = "DELETE FROM " . $this->table_name . " WHERE producto_id = ?";
-            
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(1, $producto_id);
-            
-            return $stmt->execute();
-            
-        } catch (PDOException $e) {
-            error_log("Error PDO al eliminar atributos del producto {$producto_id}: " . $e->getMessage());
-            return false;
-        } catch (Exception $e) {
-            error_log("Error general al eliminar atributos del producto {$producto_id}: " . $e->getMessage());
-            return false;
-        }
-    }
-    
-    /**
-     * Guardar múltiples atributos de un producto (reemplaza todos)
-     */
-    public function saveProductoAtributos($producto_id, $atributos) {
-        try {
-            // Iniciar transacción
-            $this->conn->beginTransaction();
-            
-            // Eliminar atributos existentes
-            $this->deleteByProducto($producto_id);
-            
-            // Insertar nuevos atributos
-            foreach ($atributos as $atributo) {
-                if (empty($atributo['valor'])) continue; // Saltar valores vacíos
-                
-                $this->producto_id = $producto_id;
-                $this->atributo_id = $atributo['atributo_id'];
-                $this->valor = $atributo['valor'];
-                
-                if (!$this->create()) {
-                    $this->conn->rollback();
-                    return false;
-                }
-            }
-            
-            // Confirmar transacción
-            $this->conn->commit();
-            return true;
-            
-        } catch (Exception $e) {
-            $this->conn->rollback();
-            error_log("Error al guardar atributos del producto {$producto_id}: " . $e->getMessage());
-            return false;
-        }
-    }
-    
-    /**
-     * Verificar si existe la relación producto-atributo
-     */
-    private function exists($producto_id, $atributo_id) {
+    public function exists($producto_id, $atributo_id) {
         try {
             $query = "SELECT COUNT(*) as count FROM " . $this->table_name . " 
                       WHERE producto_id = ? AND atributo_id = ?";
@@ -257,7 +383,7 @@ class ProductoAtributo {
             return $result['count'] > 0;
             
         } catch (PDOException $e) {
-            error_log("Error PDO al verificar existencia producto_atributo: " . $e->getMessage());
+            error_log("Error PDO al verificar existencia de producto_atributo: " . $e->getMessage());
             return false;
         }
     }
@@ -299,89 +425,5 @@ class ProductoAtributo {
             return false;
         }
     }
-    
-    /**
-     * Filtrar productos por múltiples atributos
-     */
-    public function filtrarProductosPorAtributos($filtros, $limit = null, $offset = 0) {
-        try {
-            if (empty($filtros)) {
-                return [];
-            }
-            
-            // Construir query dinámicamente
-            $whereClauses = [];
-            $params = [];
-            $paramIndex = 1;
-            
-            foreach ($filtros as $atributo_id => $valores) {
-                if (!is_array($valores) || empty($valores)) continue;
-                
-                $placeholders = [];
-                foreach ($valores as $valor) {
-                    $placeholders[] = "?";
-                    $params[$paramIndex] = $valor;
-                    $paramIndex++;
-                }
-                
-                $placeholdersStr = implode(',', $placeholders);
-                $whereClauses[] = "(pa{$atributo_id}.atributo_id = {$atributo_id} AND pa{$atributo_id}.valor IN ({$placeholdersStr}))";
-            }
-            
-            if (empty($whereClauses)) {
-                return [];
-            }
-            
-            // Construir JOINs dinámicamente
-            $joins = [];
-            $groupBy = [];
-            foreach (array_keys($filtros) as $atributo_id) {
-                $joins[] = "INNER JOIN " . $this->table_name . " pa{$atributo_id} ON p.id = pa{$atributo_id}.producto_id";
-                $groupBy[] = "pa{$atributo_id}.producto_id";
-            }
-            
-            $joinsStr = implode(' ', $joins);
-            $whereStr = implode(' AND ', $whereClauses);
-            
-            $query = "SELECT DISTINCT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
-                             c.nombre as categoria_nombre
-                      FROM productos p
-                      LEFT JOIN categorias c ON p.categoria_id = c.id
-                      {$joinsStr}
-                      WHERE p.activo = 1 AND {$whereStr}
-                      GROUP BY p.id
-                      HAVING COUNT(DISTINCT CASE ";
-            
-            // Agregar HAVING para que coincida con TODOS los filtros
-            $havingParts = [];
-            foreach (array_keys($filtros) as $atributo_id) {
-                $havingParts[] = "WHEN pa{$atributo_id}.atributo_id = {$atributo_id} THEN pa{$atributo_id}.atributo_id END";
-            }
-            
-            $query .= implode(' ', $havingParts) . ") = " . count($filtros) . "
-                      ORDER BY p.nombre ASC";
-            
-            if ($limit) {
-                $query .= " LIMIT {$limit} OFFSET {$offset}";
-            }
-            
-            $stmt = $this->conn->prepare($query);
-            
-            // Bind parámetros
-            foreach ($params as $index => $value) {
-                $stmt->bindValue($index, $value);
-            }
-            
-            $stmt->execute();
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-        } catch (PDOException $e) {
-            error_log("Error PDO al filtrar productos por atributos: " . $e->getMessage());
-            return [];
-        } catch (Exception $e) {
-            error_log("Error general al filtrar productos por atributos: " . $e->getMessage());
-            return [];
-        }
-    }
 }
+?>

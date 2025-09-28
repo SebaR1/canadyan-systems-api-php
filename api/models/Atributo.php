@@ -237,21 +237,40 @@ class Atributo {
     
     /**
      * Obtener todos los atributos con sus valores únicos (para filtros del catálogo)
+     * Si se proporciona categoria_id, filtrar solo productos de esa categoría (incluyendo subcategorías)
      */
-    public function getAtributosConValores() {
+    public function getAtributosConValores($categoria_id = null) {
         try {
+            // Query base
             $query = "SELECT DISTINCT 
                         a.id, 
                         a.nombre, 
                         a.tipo,
                         pa.valor
-                      FROM " . $this->table_name . " a
-                      INNER JOIN producto_atributos pa ON a.id = pa.atributo_id
-                      INNER JOIN productos p ON pa.producto_id = p.id
-                      WHERE p.activo = 1 AND pa.valor IS NOT NULL AND pa.valor != ''
-                      ORDER BY a.nombre, pa.valor";
+                    FROM " . $this->table_name . " a
+                    INNER JOIN producto_atributos pa ON a.id = pa.atributo_id
+                    INNER JOIN productos p ON pa.producto_id = p.id";
+            
+            // Si hay categoria_id, agregar JOIN con categorías y filtrar
+            if ($categoria_id !== null) {
+                $query .= " INNER JOIN categorias c ON p.categoria_id = c.id";
+            }
+            
+            $query .= " WHERE p.activo = 1 AND pa.valor IS NOT NULL AND pa.valor != ''";
+            
+            // Filtrar por categoría (incluyendo subcategorías)
+            if ($categoria_id !== null) {
+                $query .= " AND (c.id = :categoria_id OR c.parent_id = :categoria_id)";
+            }
+            
+            $query .= " ORDER BY a.nombre, pa.valor";
             
             $stmt = $this->conn->prepare($query);
+            
+            if ($categoria_id !== null) {
+                $stmt->bindParam(':categoria_id', $categoria_id, PDO::PARAM_INT);
+            }
+            
             $stmt->execute();
             
             $result = $stmt->fetchAll(PDO::FETCH_ASSOC);

@@ -1,6 +1,6 @@
 <?php
 /**
- * Modelo Producto
+ * Modelo Producto - CORREGIDO para conversión de tipos
  * Canadian Sistemas API
  */
 
@@ -26,6 +26,242 @@ class Producto {
     public function __construct() {
         $database = new Database();
         $this->conn = $database->getConnection();
+    }
+    
+    /**
+     * Procesar datos de producto para asegurar tipos correctos
+     */
+    private function processProductData($data) {
+        if (!$data) return $data;
+        
+        // Si es un array de productos
+        if (isset($data[0])) {
+            return array_map([$this, 'processSingleProduct'], $data);
+        }
+        
+        // Si es un solo producto
+        return $this->processSingleProduct($data);
+    }
+    
+    /**
+     * Procesar un solo producto para asegurar tipos correctos
+     */
+    private function processSingleProduct($producto) {
+        if (!$producto) return $producto;
+        
+        // Convertir precio a float o null
+        if (isset($producto['precio'])) {
+            $producto['precio'] = !empty($producto['precio']) ? floatval($producto['precio']) : null;
+        }
+        
+        // Asegurar que stock sea integer
+        if (isset($producto['stock'])) {
+            $producto['stock'] = intval($producto['stock']);
+        }
+        
+        // Asegurar que activo sea boolean (1/0)
+        if (isset($producto['activo'])) {
+            $producto['activo'] = intval($producto['activo']);
+        }
+        
+        // Asegurar IDs como integers
+        if (isset($producto['id'])) {
+            $producto['id'] = intval($producto['id']);
+        }
+        
+        if (isset($producto['categoria_id'])) {
+            $producto['categoria_id'] = intval($producto['categoria_id']);
+        }
+        
+        return $producto;
+    }
+    
+    /**
+     * Leer todos los productos (con paginación opcional)
+     */
+    public function readAll($limit = null, $offset = 0, $activeOnly = true) {
+        try {
+            $whereClause = $activeOnly ? "WHERE p.activo = 1" : "";
+            
+            $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
+                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                             c.nombre as categoria_nombre
+                      FROM " . $this->table_name . " p
+                      LEFT JOIN categorias c ON p.categoria_id = c.id
+                      {$whereClause}
+                      ORDER BY p.created_at DESC";
+            
+            if ($limit) {
+                $query .= " LIMIT :limit OFFSET :offset";
+            }
+            
+            $stmt = $this->conn->prepare($query);
+            
+            if ($limit) {
+                $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
+                $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
+            }
+            
+            $stmt->execute();
+            $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // CORRECCIÓN: Procesar datos para asegurar tipos correctos
+            return $this->processProductData($productos);
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO al leer productos: " . $e->getMessage());
+            return [];
+        } catch (Exception $e) {
+            error_log("Error general al leer productos: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Obtener producto por ID
+     */
+    public function readOne() {
+        try {
+            $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
+                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                             c.nombre as categoria_nombre
+                      FROM " . $this->table_name . " p
+                      LEFT JOIN categorias c ON p.categoria_id = c.id
+                      WHERE p.id = ? 
+                      LIMIT 1";
+            
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(1, $this->id);
+            $stmt->execute();
+            
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($row) {
+                // CORRECCIÓN: Procesar datos para asegurar tipos correctos
+                $processedRow = $this->processSingleProduct($row);
+                
+                // Actualizar propiedades del objeto
+                $this->nombre = $processedRow['nombre'];
+                $this->descripcion = $processedRow['descripcion'];
+                $this->precio = $processedRow['precio'];
+                $this->stock = $processedRow['stock'];
+                $this->categoria_id = $processedRow['categoria_id'];
+                $this->sku = $processedRow['sku'];
+                $this->activo = $processedRow['activo'];
+                $this->created_at = $processedRow['created_at'];
+                $this->updated_at = $processedRow['updated_at'];
+                
+                return $processedRow;
+            }
+            
+            return false;
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO al leer producto ID {$this->id}: " . $e->getMessage());
+            return false;
+        } catch (Exception $e) {
+            error_log("Error general al leer producto ID {$this->id}: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+public function getByCategory($categoryId, $limit = null, $offset = 0) {
+    try {
+        $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
+                         p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                         c.nombre as categoria_nombre
+                  FROM " . $this->table_name . " p
+                  LEFT JOIN categorias c ON p.categoria_id = c.id
+                  WHERE p.categoria_id = ? AND p.activo = 1
+                  ORDER BY p.nombre ASC";
+        
+        $params = [$categoryId];
+        
+        if ($limit) {
+            $query .= " LIMIT ? OFFSET ?";
+            $params[] = $limit;
+            $params[] = $offset;
+        }
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute($params);
+        
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+    } catch (PDOException $e) {
+        error_log("Error PDO al obtener productos por categoría {$categoryId}: " . $e->getMessage());
+        return [];
+    } catch (Exception $e) {
+        error_log("Error general al obtener productos por categoría {$categoryId}: " . $e->getMessage());
+        return [];
+    }
+}
+
+    /**
+     * Buscar productos por nombre o descripción - CORREGIDO
+     */
+    public function search($searchTerm, $limit = null, $offset = 0) {
+        try {
+            $searchTerm = '%' . htmlspecialchars(strip_tags($searchTerm)) . '%';
+            
+            $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
+                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                             c.nombre as categoria_nombre
+                      FROM " . $this->table_name . " p
+                      LEFT JOIN categorias c ON p.categoria_id = c.id
+                      WHERE (p.nombre LIKE :search OR p.descripcion LIKE :search) 
+                      AND p.activo = 1
+                      ORDER BY p.nombre ASC";
+            
+            if ($limit) {
+                $query .= " LIMIT :limit OFFSET :offset";
+            }
+            
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':search', $searchTerm);
+            
+            if ($limit) {
+                $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
+                $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
+            }
+            
+            $stmt->execute();
+            $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // CORRECCIÓN: Procesar datos para asegurar tipos correctos
+            return $this->processProductData($productos);
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO al buscar productos: " . $e->getMessage());
+            return [];
+        } catch (Exception $e) {
+            error_log("Error general al buscar productos: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Contar total de productos para paginación - MÉTODO FALTANTE AGREGADO
+     */
+    public function countTotal($activeOnly = true) {
+        try {
+            $whereClause = $activeOnly ? "WHERE activo = 1" : "";
+            
+            $query = "SELECT COUNT(*) as total FROM " . $this->table_name . " " . $whereClause;
+            
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return intval($result['total']);
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO al contar productos: " . $e->getMessage());
+            return 0;
+        } catch (Exception $e) {
+            error_log("Error general al contar productos: " . $e->getMessage());
+            return 0;
+        }
     }
     
     /**
@@ -87,87 +323,6 @@ class Producto {
             return false;
         } catch (Exception $e) {
             error_log("Error general al crear producto: " . $e->getMessage());
-            return false;
-        }
-    }
-    
-    /**
-     * Leer todos los productos (con paginación opcional)
-     */
-    public function readAll($limit = null, $offset = 0, $activeOnly = true) {
-        try {
-            $whereClause = $activeOnly ? "WHERE p.activo = 1" : "";
-            
-            $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
-                             c.nombre as categoria_nombre
-                      FROM " . $this->table_name . " p
-                      LEFT JOIN categorias c ON p.categoria_id = c.id
-                      {$whereClause}
-                      ORDER BY p.created_at DESC";
-            
-            if ($limit) {
-                $query .= " LIMIT :limit OFFSET :offset";
-            }
-            
-            $stmt = $this->conn->prepare($query);
-            
-            if ($limit) {
-                $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
-                $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
-            }
-            
-            $stmt->execute();
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-        } catch (PDOException $e) {
-            error_log("Error PDO al leer productos: " . $e->getMessage());
-            return [];
-        } catch (Exception $e) {
-            error_log("Error general al leer productos: " . $e->getMessage());
-            return [];
-        }
-    }
-    
-    /**
-     * Obtener producto por ID
-     */
-    public function readOne() {
-        try {
-            $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
-                             c.nombre as categoria_nombre
-                      FROM " . $this->table_name . " p
-                      LEFT JOIN categorias c ON p.categoria_id = c.id
-                      WHERE p.id = ? 
-                      LIMIT 1";
-            
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(1, $this->id);
-            $stmt->execute();
-            
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($row) {
-                $this->nombre = $row['nombre'];
-                $this->descripcion = $row['descripcion'];
-                $this->precio = $row['precio'];
-                $this->stock = $row['stock'];
-                $this->categoria_id = $row['categoria_id'];
-                $this->sku = $row['sku'];
-                $this->activo = $row['activo'];
-                $this->created_at = $row['created_at'];
-                $this->updated_at = $row['updated_at'];
-                return $row; // Devuelve toda la info incluyendo categoria_nombre
-            }
-            
-            return false;
-            
-        } catch (PDOException $e) {
-            error_log("Error PDO al leer producto ID {$this->id}: " . $e->getMessage());
-            return false;
-        } catch (Exception $e) {
-            error_log("Error general al leer producto ID {$this->id}: " . $e->getMessage());
             return false;
         }
     }
@@ -263,83 +418,6 @@ class Producto {
     }
     
     /**
-     * Obtener productos por categoría
-     */
-    public function getByCategory($categoryId, $limit = null, $offset = 0) {
-        try {
-            $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
-                             c.nombre as categoria_nombre
-                      FROM " . $this->table_name . " p
-                      LEFT JOIN categorias c ON p.categoria_id = c.id
-                      WHERE p.categoria_id = :categoria_id AND p.activo = 1
-                      ORDER BY p.nombre ASC";
-            
-            if ($limit) {
-                $query .= " LIMIT :limit OFFSET :offset";
-            }
-            
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':categoria_id', $categoryId, PDO::PARAM_INT);
-            
-            if ($limit) {
-                $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
-                $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
-            }
-            
-            $stmt->execute();
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-        } catch (PDOException $e) {
-            error_log("Error PDO al obtener productos por categoría {$categoryId}: " . $e->getMessage());
-            return [];
-        } catch (Exception $e) {
-            error_log("Error general al obtener productos por categoría {$categoryId}: " . $e->getMessage());
-            return [];
-        }
-    }
-    
-    /**
-     * Buscar productos por nombre o descripción
-     */
-    public function search($searchTerm, $limit = null, $offset = 0) {
-        try {
-            $searchTerm = '%' . htmlspecialchars(strip_tags($searchTerm)) . '%';
-            
-            $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
-                             c.nombre as categoria_nombre
-                      FROM " . $this->table_name . " p
-                      LEFT JOIN categorias c ON p.categoria_id = c.id
-                      WHERE (p.nombre LIKE :search OR p.descripcion LIKE :search) 
-                      AND p.activo = 1
-                      ORDER BY p.nombre ASC";
-            
-            if ($limit) {
-                $query .= " LIMIT :limit OFFSET :offset";
-            }
-            
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':search', $searchTerm);
-            
-            if ($limit) {
-                $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
-                $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
-            }
-            
-            $stmt->execute();
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-        } catch (PDOException $e) {
-            error_log("Error PDO al buscar productos: " . $e->getMessage());
-            return [];
-        } catch (Exception $e) {
-            error_log("Error general al buscar productos: " . $e->getMessage());
-            return [];
-        }
-    }
-    
-    /**
      * Actualizar solo el stock
      */
     public function updateStock($newStock) {
@@ -374,63 +452,13 @@ class Producto {
     }
     
     /**
-     * Cambiar estado activo/inactivo
-     */
-    public function toggleActive() {
-        try {
-            $query = "UPDATE " . $this->table_name . " SET activo = !activo WHERE id = :id";
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':id', $this->id);
-            
-            if ($stmt->execute()) {
-                // Actualizar la propiedad local
-                $this->activo = !$this->activo;
-                return true;
-            }
-            
-            error_log("Error al cambiar estado del producto ID {$this->id}: No se pudo ejecutar la query");
-            return false;
-            
-        } catch (PDOException $e) {
-            error_log("Error PDO al cambiar estado del producto ID {$this->id}: " . $e->getMessage());
-            return false;
-        } catch (Exception $e) {
-            error_log("Error general al cambiar estado del producto ID {$this->id}: " . $e->getMessage());
-            return false;
-        }
-    }
-    
-    /**
-     * Contar total de productos (para paginación)
-     */
-    public function countTotal($activeOnly = true) {
-        try {
-            $whereClause = $activeOnly ? "WHERE activo = 1" : "";
-            
-            $query = "SELECT COUNT(*) as total FROM " . $this->table_name . " " . $whereClause;
-            $stmt = $this->conn->prepare($query);
-            $stmt->execute();
-            
-            $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            return intval($result['total']);
-            
-        } catch (PDOException $e) {
-            error_log("Error PDO al contar productos: " . $e->getMessage());
-            return 0;
-        } catch (Exception $e) {
-            error_log("Error general al contar productos: " . $e->getMessage());
-            return 0;
-        }
-    }
-    
-    /**
      * Verificar si una categoría existe
      */
-    private function categoryExists($categoryId) {
+    private function categoryExists($categoria_id) {
         try {
             $query = "SELECT COUNT(*) as count FROM categorias WHERE id = ?";
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(1, $categoryId);
+            $stmt->bindParam(1, $categoria_id);
             $stmt->execute();
             
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -443,26 +471,22 @@ class Producto {
     }
     
     /**
-     * Verificar si SKU existe
+     * Verificar si un SKU existe (excluyendo el producto actual si se proporciona)
      */
     private function skuExists($sku, $excludeId = null) {
         try {
             $query = "SELECT COUNT(*) as count FROM " . $this->table_name . " WHERE sku = ?";
+            $params = [$sku];
             
-            if ($excludeId) {
+            if ($excludeId !== null) {
                 $query .= " AND id != ?";
+                $params[] = $excludeId;
             }
             
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(1, $sku);
+            $stmt->execute($params);
             
-            if ($excludeId) {
-                $stmt->bindParam(2, $excludeId);
-            }
-            
-            $stmt->execute();
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            
             return $result['count'] > 0;
             
         } catch (PDOException $e) {
@@ -471,3 +495,4 @@ class Producto {
         }
     }
 }
+?>

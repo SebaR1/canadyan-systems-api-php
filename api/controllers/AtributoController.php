@@ -256,7 +256,7 @@ class AtributoController {
     
     /**
      * Obtener atributos con valores para filtros del catálogo
-     * GET /api/routes/atributos.php?action=filters
+     * GET /api/routes/atributos.php?action=filters&categoria_id=1 (opcional)
      */
     public function getFilters() {
         try {
@@ -266,11 +266,15 @@ class AtributoController {
                 return;
             }
             
+            // Obtener categoria_id opcional del query string
+            $categoria_id = isset($_GET['categoria_id']) && is_numeric($_GET['categoria_id']) ? intval($_GET['categoria_id']) : null;
+            
             $atributo = new Atributo();
-            $filtros = $atributo->getAtributosConValores();
+            $filtros = $atributo->getAtributosConValores($categoria_id);
             
             Response::success('Filtros obtenidos exitosamente', 200, [
-                'filtros' => $filtros
+                'filtros' => $filtros,
+                'categoria_id' => $categoria_id
             ]);
             
         } catch (Exception $e) {
