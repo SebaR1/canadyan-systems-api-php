@@ -75,30 +75,29 @@ class ProductoAtributo {
     public function filtrarProductosPorAtributos($filtros, $limit = null, $offset = 0, $categoria_id = null) {
         try {
             if (empty($filtros)) {
-                // Si no hay filtros, devolver productos básicos (pero filtrados por categoría si aplica)
                 return $this->getProductosBasicos($limit, $offset, $categoria_id);
             }
             
-            // Preparar arrays para la consulta
+            // Preparar condiciones y parámetros
             $whereConditions = [];
             $params = [];
             
-            // Construir condiciones WHERE para cada atributo
+            // Construir condiciones para cada atributo
             foreach ($filtros as $atributo_id => $valores) {
                 if (!is_array($valores) || empty($valores)) continue;
                 
-                $atributo_id = intval($atributo_id); // Asegurar que sea entero
+                $atributo_id = intval($atributo_id);
                 $placeholders = [];
                 
                 foreach ($valores as $valor) {
                     if (empty($valor)) continue;
                     $placeholders[] = "?";
-                    $params[] = trim($valor); // Limpiar valor
+                    $params[] = trim($valor);
                 }
                 
                 if (!empty($placeholders)) {
                     $placeholdersStr = implode(',', $placeholders);
-                    $whereConditions[] = "(pa.atributo_id = {$atributo_id} AND pa.valor IN ({$placeholdersStr}))";
+                    $whereConditions[] = "(pa_sub.atributo_id = {$atributo_id} AND pa_sub.valor IN ({$placeholdersStr}))";
                 }
             }
             
@@ -106,53 +105,39 @@ class ProductoAtributo {
                 return $this->getProductosBasicos($limit, $offset, $categoria_id);
             }
             
-            $whereClause = implode(' OR ', $whereConditions);
-            
-            // Query principal con JOIN a categorías para filtrar
+            // Query principal SIMPLIFICADA
             $query = "SELECT DISTINCT 
                         p.id, p.nombre, p.descripcion, p.precio, p.stock, 
                         p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
                         c.nombre as categoria_nombre
                     FROM productos p
-                    INNER JOIN " . $this->table_name . " pa ON p.id = pa.producto_id
                     LEFT JOIN categorias c ON p.categoria_id = c.id
-                    WHERE p.activo = 1 AND ({$whereClause})";
+                    WHERE p.activo = 1";
             
-            // AGREGAR FILTRO POR CATEGORÍA
+            $finalParams = [];
+            
+            // Filtro por categoría
             if ($categoria_id !== null) {
-                // Filtrar por categoría padre E hijas (subcategorías)
                 $query .= " AND (p.categoria_id = ? OR c.parent_id = ?)";
-                $params[] = $categoria_id;
-                $params[] = $categoria_id;
+                $finalParams[] = $categoria_id;
+                $finalParams[] = $categoria_id;
             }
             
-            // SIEMPRE usar subconsulta para asegurar que coincidan TODOS los filtros
-            $subQuery = "SELECT producto_id 
-                        FROM " . $this->table_name . " pa2
-                        INNER JOIN productos p2 ON pa2.producto_id = p2.id";
-
-            // Agregar filtro de categoría también en subconsulta
-            if ($categoria_id !== null) {
-                $subQuery .= " LEFT JOIN categorias c2 ON p2.categoria_id = c2.id";
-            }
-
-            $subQuery .= " WHERE p2.activo = 1 AND ({$whereClause})";
-
-            if ($categoria_id !== null) {
-                $subQuery .= " AND (p2.categoria_id = ? OR c2.parent_id = ?)";
-            }
-
-            $subQuery .= " GROUP BY producto_id 
-                        HAVING COUNT(DISTINCT pa2.atributo_id) >= " . count($filtros);
-
-            $query .= " AND p.id IN ({$subQuery})";
-
-            // Duplicar parámetros para la subconsulta
-            $subconsultaParams = [];
+            // Subconsulta para filtro AND - CORREGIDA
+            $whereClause = implode(' OR ', $whereConditions);
+            
+            $query .= " AND p.id IN (
+                SELECT pa_sub.producto_id 
+                FROM " . $this->table_name . " pa_sub
+                WHERE ({$whereClause})
+                GROUP BY pa_sub.producto_id 
+                HAVING COUNT(DISTINCT pa_sub.atributo_id) = " . count($filtros) . "
+            )";
+            
+            // Agregar parámetros de filtros
             foreach ($params as $param) {
-                $subconsultaParams[] = $param;
+                $finalParams[] = $param;
             }
-            $params = array_merge($params, $subconsultaParams);
             
             $query .= " ORDER BY p.nombre ASC";
             
@@ -162,28 +147,26 @@ class ProductoAtributo {
             
             $stmt = $this->conn->prepare($query);
             
-            // Bind todos los parámetros
-            foreach ($params as $index => $value) {
+            // Bind parámetros
+            foreach ($finalParams as $index => $value) {
                 $stmt->bindValue($index + 1, $value);
             }
             
             $stmt->execute();
             $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // Procesar datos para asegurar tipos correctos
             return $this->processProductData($productos);
             
         } catch (PDOException $e) {
             error_log("Error PDO al filtrar productos por atributos: " . $e->getMessage());
             error_log("Query: " . ($query ?? 'N/A'));
-            error_log("Params: " . print_r($params ?? [], true));
+            error_log("Params: " . print_r($finalParams ?? [], true));
             return [];
         } catch (Exception $e) {
             error_log("Error general al filtrar productos por atributos: " . $e->getMessage());
             return [];
         }
-    }
-    
+    }    
     /**
      * Obtener productos básicos (sin filtros) CON FILTRO POR CATEGORÍA
      */
