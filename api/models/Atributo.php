@@ -260,7 +260,7 @@ class Atributo {
             
             // Filtrar por categoría (incluyendo subcategorías)
             if ($categoria_id !== null) {
-                $query .= " AND (c.id = :categoria_id OR c.parent_id = :categoria_id)";
+                $query .= " AND (c.id = :categoria_id1 OR c.parent_id = :categoria_id2)";
             }
             
             $query .= " ORDER BY a.nombre, pa.valor";
@@ -268,7 +268,8 @@ class Atributo {
             $stmt = $this->conn->prepare($query);
             
             if ($categoria_id !== null) {
-                $stmt->bindParam(':categoria_id', $categoria_id, PDO::PARAM_INT);
+                $stmt->bindParam(':categoria_id1', $categoria_id, PDO::PARAM_INT);
+                $stmt->bindParam(':categoria_id2', $categoria_id, PDO::PARAM_INT);
             }
             
             $stmt->execute();
