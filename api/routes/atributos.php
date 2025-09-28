@@ -141,6 +141,14 @@ try {
         case 'filter-products':
             $controller->filterProducts();
             break;
+
+        /**
+         * Obtener filtros dinámicos basados en filtros aplicados
+         * POST /api/routes/atributos.php?action=dynamic-filters
+         */
+        case 'dynamic-filters':
+            $controller->getDynamicFilters();
+            break;
             
         /**
          * Endpoint de prueba

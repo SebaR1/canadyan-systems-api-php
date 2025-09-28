@@ -126,35 +126,33 @@ class ProductoAtributo {
                 $params[] = $categoria_id;
             }
             
-            // Si hay múltiples atributos, necesitamos que coincidan TODOS
-            if (count($filtros) > 1) {
-                $subQuery = "SELECT producto_id 
-                            FROM " . $this->table_name . " pa2
-                            INNER JOIN productos p2 ON pa2.producto_id = p2.id";
-                
-                // Agregar filtro de categoría también en subconsulta
-                if ($categoria_id !== null) {
-                    $subQuery .= " LEFT JOIN categorias c2 ON p2.categoria_id = c2.id";
-                }
-                
-                $subQuery .= " WHERE p2.activo = 1 AND ({$whereClause})";
-                
-                if ($categoria_id !== null) {
-                    $subQuery .= " AND (p2.categoria_id = ? OR c2.parent_id = ?)";
-                }
-                
-                $subQuery .= " GROUP BY producto_id 
-                            HAVING COUNT(DISTINCT pa2.atributo_id) >= " . count($filtros);
-                
-                $query .= " AND p.id IN ({$subQuery})";
-                
-                // Duplicar parámetros para la subconsulta
-                $subconsultaParams = [];
-                foreach ($params as $param) {
-                    $subconsultaParams[] = $param;
-                }
-                $params = array_merge($params, $subconsultaParams);
+            // SIEMPRE usar subconsulta para asegurar que coincidan TODOS los filtros
+            $subQuery = "SELECT producto_id 
+                        FROM " . $this->table_name . " pa2
+                        INNER JOIN productos p2 ON pa2.producto_id = p2.id";
+
+            // Agregar filtro de categoría también en subconsulta
+            if ($categoria_id !== null) {
+                $subQuery .= " LEFT JOIN categorias c2 ON p2.categoria_id = c2.id";
             }
+
+            $subQuery .= " WHERE p2.activo = 1 AND ({$whereClause})";
+
+            if ($categoria_id !== null) {
+                $subQuery .= " AND (p2.categoria_id = ? OR c2.parent_id = ?)";
+            }
+
+            $subQuery .= " GROUP BY producto_id 
+                        HAVING COUNT(DISTINCT pa2.atributo_id) >= " . count($filtros);
+
+            $query .= " AND p.id IN ({$subQuery})";
+
+            // Duplicar parámetros para la subconsulta
+            $subconsultaParams = [];
+            foreach ($params as $param) {
+                $subconsultaParams[] = $param;
+            }
+            $params = array_merge($params, $subconsultaParams);
             
             $query .= " ORDER BY p.nombre ASC";
             

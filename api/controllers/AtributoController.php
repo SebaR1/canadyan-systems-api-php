@@ -416,4 +416,43 @@ class AtributoController {
             Response::error('Error interno del servidor', 500);
         }
     }
+
+    /**
+     * Obtener filtros dinámicos basados en filtros ya aplicados
+     * POST /api/routes/atributos.php?action=dynamic-filters
+     */
+    public function getDynamicFilters() {
+        try {
+            // Verificar que sea POST
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+            
+            // Obtener datos JSON
+            $input = json_decode(file_get_contents('php://input'), true);
+            
+            if (!$input) {
+                Response::error('Datos JSON inválidos', 400);
+                return;
+            }
+            
+            // Obtener parámetros
+            $categoria_id = isset($input['categoria_id']) ? intval($input['categoria_id']) : null;
+            $filtros_aplicados = $input['filtros_aplicados'] ?? [];
+            
+            $atributo = new Atributo();
+            $filtros = $atributo->getAtributosDinamicos($categoria_id, $filtros_aplicados);
+            
+            Response::success('Filtros dinámicos obtenidos exitosamente', 200, [
+                'filtros' => $filtros,
+                'categoria_id' => $categoria_id,
+                'filtros_aplicados' => $filtros_aplicados
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("Error en AtributoController::getDynamicFilters: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
 }

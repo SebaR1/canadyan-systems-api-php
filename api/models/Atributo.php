@@ -325,4 +325,124 @@ class Atributo {
             return false;
         }
     }
+
+    /**
+     * Obtener atributos con valores basándose en productos ya filtrados (FILTROS DINÁMICOS)
+     */
+    public function getAtributosDinamicos($categoria_id = null, $filtros_aplicados = []) {
+        try {
+            $params = [];
+            
+            // Query base - obtener productos que cumplen con filtros existentes
+            $productosQuery = "SELECT DISTINCT p.id FROM productos p 
+                            LEFT JOIN categorias c ON p.categoria_id = c.id 
+                            WHERE p.activo = 1";
+            
+            // Aplicar filtro por categoría si existe
+            if ($categoria_id !== null) {
+                $productosQuery .= " AND (p.categoria_id = ? OR c.parent_id = ?)";
+                $params[] = $categoria_id;
+                $params[] = $categoria_id;
+            }
+            
+            // Aplicar filtros existentes si existen
+            if (!empty($filtros_aplicados)) {
+                $whereConditions = [];
+                
+                foreach ($filtros_aplicados as $atributo_id => $valores) {
+                    if (!is_array($valores) || empty($valores)) continue;
+                    
+                    $atributo_id = intval($atributo_id);
+                    $placeholders = [];
+                    
+                    foreach ($valores as $valor) {
+                        if (empty($valor)) continue;
+                        $placeholders[] = "?";
+                        $params[] = trim($valor);
+                    }
+                    
+                    if (!empty($placeholders)) {
+                        $placeholdersStr = implode(',', $placeholders);
+                        $whereConditions[] = "(pa_filter.atributo_id = {$atributo_id} AND pa_filter.valor IN ({$placeholdersStr}))";
+                    }
+                }
+                
+                if (!empty($whereConditions)) {
+                    $whereClause = implode(' OR ', $whereConditions);
+                    
+                    $productosQuery .= " AND p.id IN (
+                        SELECT DISTINCT pa_filter.producto_id 
+                        FROM producto_atributos pa_filter 
+                        WHERE ({$whereClause})";
+                    
+                    // Si hay múltiples atributos, todos deben coincidir
+                    if (count($filtros_aplicados) > 1) {
+                        $productosQuery .= " GROUP BY pa_filter.producto_id 
+                                            HAVING COUNT(DISTINCT pa_filter.atributo_id) >= " . count($filtros_aplicados);
+                    }
+                    
+                    $productosQuery .= ")";
+                }
+            }
+
+            // Ahora obtener los atributos disponibles para esos productos filtrados
+            $query = "SELECT DISTINCT 
+                        a.id, 
+                        a.nombre, 
+                        a.tipo,
+                        pa.valor
+                    FROM " . $this->table_name . " a
+                    INNER JOIN producto_atributos pa ON a.id = pa.atributo_id
+                    WHERE pa.producto_id IN ({$productosQuery})
+                    AND pa.valor IS NOT NULL 
+                    AND pa.valor != ''
+                    ORDER BY a.nombre, pa.valor";
+
+                                error_log("FILTROS DINÁMICOS - Query: " . $query);
+            error_log("FILTROS DINÁMICOS - Params: " . print_r($params, true));
+            error_log("FILTROS DINÁMICOS - Filtros aplicados: " . print_r($filtros_aplicados, true));
+
+            
+
+            
+            $stmt = $this->conn->prepare($query);
+            
+            // Bind todos los parámetros (duplicados para la subconsulta)
+            foreach ($params as $index => $value) {
+                $stmt->bindValue($index + 1, $value);
+            }
+            
+            $stmt->execute();
+            $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Agrupar valores por atributo
+            $atributos = [];
+            foreach ($result as $row) {
+                $atributo_id = $row['id'];
+                
+                if (!isset($atributos[$atributo_id])) {
+                    $atributos[$atributo_id] = [
+                        'id' => $row['id'],
+                        'nombre' => $row['nombre'],
+                        'tipo' => $row['tipo'],
+                        'valores' => []
+                    ];
+                }
+                
+                if (!in_array($row['valor'], $atributos[$atributo_id]['valores'])) {
+                    $atributos[$atributo_id]['valores'][] = $row['valor'];
+                }
+            }
+            
+            // Convertir a array indexado
+            return array_values($atributos);
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO al obtener atributos dinámicos: " . $e->getMessage());
+            return [];
+        } catch (Exception $e) {
+            error_log("Error general al obtener atributos dinámicos: " . $e->getMessage());
+            return [];
+        }
+    }
 }
