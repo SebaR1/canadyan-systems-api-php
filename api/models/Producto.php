@@ -202,37 +202,43 @@ public function getByCategory($categoryId, $limit = null, $offset = 0) {
      */
     public function search($searchTerm, $limit = null, $offset = 0) {
         try {
-            $searchTerm = '%' . htmlspecialchars(strip_tags($searchTerm)) . '%';
+            // Preparar término de búsqueda
+            $searchPattern = '%' . htmlspecialchars(strip_tags($searchTerm)) . '%';
             
             $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
-                             c.nombre as categoria_nombre
-                      FROM " . $this->table_name . " p
-                      LEFT JOIN categorias c ON p.categoria_id = c.id
-                      WHERE (p.nombre LIKE :search OR p.descripcion LIKE :search) 
-                      AND p.activo = 1
-                      ORDER BY p.nombre ASC";
+                            p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                            c.nombre as categoria_nombre
+                    FROM " . $this->table_name . " p
+                    LEFT JOIN categorias c ON p.categoria_id = c.id
+                    WHERE (p.nombre LIKE ? OR p.descripcion LIKE ?) 
+                    AND p.activo = 1
+                    ORDER BY p.nombre ASC";
             
+            // Agregar LIMIT y OFFSET si se especifican
             if ($limit) {
-                $query .= " LIMIT :limit OFFSET :offset";
+                $query .= " LIMIT ? OFFSET ?";
             }
             
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':search', $searchTerm);
+            
+            // Usar bindValue() en lugar de bindParam()
+            $stmt->bindValue(1, $searchPattern, PDO::PARAM_STR);
+            $stmt->bindValue(2, $searchPattern, PDO::PARAM_STR);
             
             if ($limit) {
-                $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
-                $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
+                $stmt->bindValue(3, $limit, PDO::PARAM_INT);
+                $stmt->bindValue(4, $offset, PDO::PARAM_INT);
             }
             
             $stmt->execute();
             $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // CORRECCIÓN: Procesar datos para asegurar tipos correctos
+            // Procesar datos para asegurar tipos correctos
             return $this->processProductData($productos);
             
         } catch (PDOException $e) {
             error_log("Error PDO al buscar productos: " . $e->getMessage());
+            error_log("Query: " . ($query ?? 'N/A'));
             return [];
         } catch (Exception $e) {
             error_log("Error general al buscar productos: " . $e->getMessage());
