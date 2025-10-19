@@ -7,22 +7,32 @@
 // Headers CORS y configuración
 header('Content-Type: application/json; charset=utf-8');
 
-// CORS headers para permitir credenciales desde localhost:3000
+$allowedOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://canadian.com.ar',
+    'https://www.canadian.com.ar',
+    'https://canadian.com.ar/canadian-sistemas',
+    'https://www.canadian.com.ar/canadian-sistemas',
+];
+
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if ($origin === 'http://localhost:3000' || $origin === 'http://127.0.0.1:3000') {
-    header('Access-Control-Allow-Origin: ' . $origin);
+if (in_array($origin, $allowedOrigins, true)) {
+    header("Access-Control-Allow-Origin: $origin");
+    header("Access-Control-Allow-Credentials: true");
 } else {
-    header('Access-Control-Allow-Origin: http://localhost:3000');
+    header("Access-Control-Allow-Origin: *");
 }
 
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
-header('Access-Control-Allow-Credentials: true');
+header("Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin");
+header("Access-Control-Allow-Credentials: true");
 
-// Manejar preflight requests
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
+    header('Access-Control-Max-Age: 86400');
+    http_response_code(204);
+    exit;
 }
 
 // Incluir dependencias

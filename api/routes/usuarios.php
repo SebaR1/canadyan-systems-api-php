@@ -13,21 +13,40 @@
  * GET  /api/routes/usuarios.php?action=verify-email&token=xyz
  */
 
-// Headers CORS y configuración inicial
+// === CONFIGURACIÓN DE CORS ===
 header('Content-Type: application/json; charset=utf-8');
 
-// CORS headers para permitir credenciales desde localhost:3000
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if ($origin === 'http://localhost:3000' || $origin === 'http://127.0.0.1:3000') {
-    header('Access-Control-Allow-Origin: ' . $origin);
-} else {
-    header('Access-Control-Allow-Origin: http://localhost:3000');
-}       
+// Lista blanca de orígenes permitidos
+$allowedOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://canadian.com.ar',
+    'https://www.canadian.com.ar',
+    'https://canadian.com.ar/canadian-sistemas',
+    'https://www.canadian.com.ar/canadian-sistemas',
+];
 
-// ESTAS LÍNEAS FALTABAN:
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
-header('Access-Control-Allow-Credentials: true'); // ← LA MÁS IMPORTANTE
+// Detectar origen de la solicitud
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+
+// Si el origen está permitido, habilitar CORS
+if (in_array($origin, $allowedOrigins)) {
+    header("Access-Control-Allow-Origin: $origin");
+    header("Access-Control-Allow-Credentials: true");
+} else {
+    // Si no coincide, por seguridad no habilitamos nada (sin error explícito)
+    header("Access-Control-Allow-Origin: null");
+}
+
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+
+// Preflight (OPTIONS)
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
 
 // CONFIGURACIÓN DE SESIONES:
 if (session_status() === PHP_SESSION_NONE) {

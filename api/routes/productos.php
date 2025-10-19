@@ -5,18 +5,40 @@
  */
 
 // Headers CORS y configuración
+
+// === CONFIGURACIÓN DE CORS ===
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: http://localhost:3000'); // Cambiar por tu dominio en producción
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
-header('Access-Control-Allow-Credentials: true');
 
+// Lista de orígenes permitidos
+$allowedOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://canadian.com.ar',
+    'https://www.canadian.com.ar',
+    'https://canadian.com.ar/canadian-sistemas',
+    'https://www.canadian.com.ar/canadian-sistemas',
+];
 
-// Manejar preflight requests
+// Detectar origen
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+
+if (in_array($origin, $allowedOrigins, true)) {
+    header("Access-Control-Allow-Origin: $origin");
+    header("Access-Control-Allow-Credentials: true");
+} else {
+    // En lugar de 'null', devolvemos * en caso de peticiones sin origen (por ejemplo, tests o CLI)
+    header("Access-Control-Allow-Origin: *");
+}
+
+// Permitir métodos y cabeceras necesarias
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin");
+
+// Manejo de preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     header('Access-Control-Max-Age: 86400');
-    http_response_code(200);
-    exit();
+    http_response_code(204);
+    exit;
 }
 
 // Incluir dependencias
