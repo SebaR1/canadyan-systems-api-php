@@ -117,8 +117,8 @@ class ProductoController {
     }
 
     /**
-     * Listar todos los productos para admin con paginación
-     * GET /api/routes/productos.php?action=list-admin&page=1&limit=10
+     * Listar todos los productos para admin con paginación Y BÚSQUEDA
+     * GET /api/routes/productos.php?action=list-admin&page=1&limit=10&search=termino
      */
     public function listAdmin() {
         try {
@@ -133,6 +133,12 @@ class ProductoController {
             $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
             $search = isset($_GET['search']) ? trim($_GET['search']) : '';
             
+            // ✅ DEBUG: Log para diagnosticar
+            error_log("🔍 PRODUCTO ADMIN SEARCH - Parámetros recibidos:");
+            error_log("  - search: '" . $search . "'");
+            error_log("  - page: " . $page);
+            error_log("  - limit: " . $limit);
+            
             // Admin ve todos los productos (activos e inactivos)
             $activeOnly = false;
             
@@ -144,9 +150,27 @@ class ProductoController {
             
             $producto = new Producto();
             
-            // Por ahora, usar solo readAll - la búsqueda se puede agregar después
-            $productos = $producto->readAll($limit, $offset, $activeOnly);
-            $total = $producto->countTotal($activeOnly);
+            // ✅ SOLUCIÓN: Usar búsqueda si se proporciona término
+            if (!empty($search)) {
+                error_log("🔍 PRODUCTO ADMIN SEARCH - Usando búsqueda con término: '" . $search . "'");
+                
+                // Usar el método search del modelo
+                $productos = $producto->search($search, $limit, $offset);
+                
+                // Para contar el total, necesitamos hacer una búsqueda sin límite
+                $productosTotal = $producto->search($search);
+                $total = count($productosTotal);
+                
+                error_log("🔍 PRODUCTO ADMIN SEARCH - Resultados encontrados: " . count($productos));
+                error_log("🔍 PRODUCTO ADMIN SEARCH - Total sin paginación: " . $total);
+                
+            } else {
+                error_log("🔍 PRODUCTO ADMIN SEARCH - Sin término de búsqueda, mostrando todos");
+                
+                // Sin búsqueda, mostrar todos
+                $productos = $producto->readAll($limit, $offset, $activeOnly);
+                $total = $producto->countTotal($activeOnly);
+            }
             
             $totalPages = ceil($total / $limit);
             

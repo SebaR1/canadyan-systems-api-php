@@ -223,24 +223,25 @@ class Usuario {
     }
     
     /**
-     * Listar todos los usuarios (para admin)
+     * Listar todos los usuarios (para admin) - CORREGIDO
      */
     public function readAll($page = 1, $limit = 10, $search = '') {
         $offset = ($page - 1) * $limit;
         
         // Query base
         $query = "SELECT u.id, u.nombre, u.apellido, u.razon_social_empresa, u.cuit,
-                         u.correo_electronico, u.celular, u.ciudad, u.provincia,
-                         u.email_verificado, tu.nombre as tipo_usuario_nombre, u.created_at
-                  FROM " . $this->table_name . " u
-                  LEFT JOIN tipos_usuario tu ON u.tipo_usuario_id = tu.id";
+                        u.correo_electronico, u.celular, u.ciudad, u.provincia,
+                        u.email_verificado, u.tipo_usuario_id, tu.nombre as tipo_usuario_nombre, u.created_at
+                FROM " . $this->table_name . " u
+                LEFT JOIN tipos_usuario tu ON u.tipo_usuario_id = tu.id";
         
         // Agregar búsqueda si se proporciona
         $where_clause = "";
         if (!empty($search)) {
-            $where_clause = " WHERE (u.nombre LIKE :search OR u.apellido LIKE :search 
-                                   OR u.correo_electronico LIKE :search OR u.cuit LIKE :search
-                                   OR u.razon_social_empresa LIKE :search)";
+            // ✅ SOLUCION: Usar placeholders únicos para cada campo
+            $where_clause = " WHERE (u.nombre LIKE :search1 OR u.apellido LIKE :search2 
+                                OR u.correo_electronico LIKE :search3 OR u.cuit LIKE :search4
+                                OR u.razon_social_empresa LIKE :search5)";
         }
         
         // Query para contar total
@@ -250,11 +251,21 @@ class Usuario {
         $query .= $where_clause . " ORDER BY u.created_at DESC LIMIT :limit OFFSET :offset";
         
         try {
+            // Preparar parámetro de búsqueda
+            $search_param = null;
+            if (!empty($search)) {
+                $search_param = "%{$search}%";
+            }
+            
             // Obtener total de registros
             $count_stmt = $this->conn->prepare($count_query);
             if (!empty($search)) {
-                $search_param = "%{$search}%";
-                $count_stmt->bindParam(":search", $search_param);
+                // ✅ SOLUCION: Bind para cada placeholder único
+                $count_stmt->bindValue(':search1', $search_param, PDO::PARAM_STR);
+                $count_stmt->bindValue(':search2', $search_param, PDO::PARAM_STR);
+                $count_stmt->bindValue(':search3', $search_param, PDO::PARAM_STR);
+                $count_stmt->bindValue(':search4', $search_param, PDO::PARAM_STR);
+                $count_stmt->bindValue(':search5', $search_param, PDO::PARAM_STR);
             }
             $count_stmt->execute();
             $total = $count_stmt->fetch(PDO::FETCH_ASSOC)['total'];
@@ -262,11 +273,15 @@ class Usuario {
             // Obtener registros paginados
             $stmt = $this->conn->prepare($query);
             if (!empty($search)) {
-                $search_param = "%{$search}%";
-                $stmt->bindParam(":search", $search_param);
+                // ✅ SOLUCION: Bind para cada placeholder único
+                $stmt->bindValue(':search1', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search2', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search3', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search4', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search5', $search_param, PDO::PARAM_STR);
             }
-            $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
-            $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
             $stmt->execute();
             
             $usuarios = [];
