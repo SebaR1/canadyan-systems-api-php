@@ -115,6 +115,59 @@ class ProductoController {
             Response::error('Error interno del servidor', 500);
         }
     }
+
+    /**
+     * Listar todos los productos para admin con paginación
+     * GET /api/routes/productos.php?action=list-admin&page=1&limit=10
+     */
+    public function listAdmin() {
+        try {
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+            
+            // Parámetros de paginación
+            $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
+            $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
+            $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+            
+            // Admin ve todos los productos (activos e inactivos)
+            $activeOnly = false;
+            
+            // Validar parámetros
+            if ($page < 1) $page = 1;
+            if ($limit < 1 || $limit > 100) $limit = 10;
+            
+            $offset = ($page - 1) * $limit;
+            
+            $producto = new Producto();
+            
+            // Por ahora, usar solo readAll - la búsqueda se puede agregar después
+            $productos = $producto->readAll($limit, $offset, $activeOnly);
+            $total = $producto->countTotal($activeOnly);
+            
+            $totalPages = ceil($total / $limit);
+            
+            Response::success('Productos obtenidos exitosamente', 200, [
+                'productos' => $productos,
+                'pagination' => [
+                    'current_page' => $page,
+                    'per_page' => $limit,
+                    'total' => $total,
+                    'total_pages' => $totalPages,
+                    'has_next' => $page < $totalPages,
+                    'has_prev' => $page > 1,
+                    'search' => $search
+                ]
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("Error en ProductoController::listAdmin: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
     
     /**
      * Obtener producto por ID
@@ -494,12 +547,24 @@ class ProductoController {
     }
     
     /**
-     * Verificar que el usuario sea admin (placeholder por ahora)
+     * Verificar si el usuario actual es administrador
      */
     private function isAdmin() {
-        // TODO: Implementar lógica de verificación de admin
-        // Por ahora devuelve true para desarrollo
-        return true;
+        // Iniciar sesión si no está iniciada
+        if (session_status() === PHP_SESSION_NONE) {
+            session_set_cookie_params([
+                'lifetime' => 0,
+                'path' => '/',
+                'domain' => '',
+                'secure' => false,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]);
+            session_start();
+        }
+
+        $user_type = $_SESSION['user_type'] ?? null;
+        return $user_type == 2; // Tipo 2 = Admin
     }
 }
 ?>

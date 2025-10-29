@@ -89,6 +89,22 @@ try {
             }
             $controller->list();
             break;
+
+        /**
+         * Listar productos para admin (incluye inactivos y soft-deleted)
+         * GET /api/routes/productos.php?action=list-admin&page=1&limit=10&search=termino
+         * 
+         * Query params:
+         * - page: número de página (default: 1)
+         * - limit: productos por página (default: 10, max: 100)
+         */
+        case 'list-admin':
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                Response::error('Método no permitido. Use GET.', 405);
+                break;
+            }
+            $controller->listAdmin();
+            break;
             
         /**
          * Obtener producto por ID
