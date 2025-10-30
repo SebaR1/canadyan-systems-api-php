@@ -65,38 +65,43 @@ class Atributo {
         }
     }
     
-/**
- * Leer todos los atributos - CON DEBUG
- */
-public function readAll() {
-    try {
-        $query = "SELECT id, nombre, tipo, created_at, updated_at
-                  FROM " . $this->table_name . " 
-                  ORDER BY nombre ASC";
-        
-        // DEBUG: Log de la query
-        error_log("DEBUG ATRIBUTOS - Query: " . $query);
-        error_log("DEBUG ATRIBUTOS - Tabla: " . $this->table_name);
-        
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute();
-        
-        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // DEBUG: Log del resultado
-        error_log("DEBUG ATRIBUTOS - Filas encontradas: " . count($result));
-        error_log("DEBUG ATRIBUTOS - Resultado: " . print_r($result, true));
-        
-        return $result;
-        
-    } catch (PDOException $e) {
-        error_log("Error PDO al leer atributos: " . $e->getMessage());
-        return [];
-    } catch (Exception $e) {
-        error_log("Error general al leer atributos: " . $e->getMessage());
-        return [];
+    /**
+     * Leer todos los atributos - CON CONTEO DE PRODUCTOS
+     */
+    public function readAll() {
+        try {
+            $query = "SELECT 
+                        a.id, 
+                        a.nombre, 
+                        a.tipo, 
+                        a.created_at, 
+                        a.updated_at,
+                        COUNT(DISTINCT pa.producto_id) as productos_count
+                    FROM " . $this->table_name . " a
+                    LEFT JOIN producto_atributos pa ON a.id = pa.atributo_id
+                    GROUP BY a.id, a.nombre, a.tipo, a.created_at, a.updated_at
+                    ORDER BY a.nombre ASC";
+            
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            
+            $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Convertir productos_count a integer
+            foreach ($result as &$row) {
+                $row['productos_count'] = intval($row['productos_count']);
+            }
+            
+            return $result;
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO al leer atributos: " . $e->getMessage());
+            return [];
+        } catch (Exception $e) {
+            error_log("Error general al leer atributos: " . $e->getMessage());
+            return [];
+        }
     }
-}
     
     /**
      * Obtener atributo por ID

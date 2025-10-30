@@ -447,5 +447,91 @@ class ProductoAtributo {
             return false;
         }
     }
+
+    /**
+     * Guardar múltiples atributos de un producto
+     * Elimina los anteriores y guarda los nuevos
+     */
+    public function saveProductoAtributos($producto_id, $atributos) {
+        try {
+            // Validar producto_id
+            if (empty($producto_id) || !is_numeric($producto_id)) {
+                error_log("Error en saveProductoAtributos: producto_id inválido");
+                return false;
+            }
+            
+            $producto_id = intval($producto_id);
+            
+            // Verificar que el producto existe
+            if (!$this->productoExists($producto_id)) {
+                error_log("Error en saveProductoAtributos: El producto ID {$producto_id} no existe");
+                return false;
+            }
+            
+            // Iniciar transacción
+            $this->conn->beginTransaction();
+            
+            // 1. Eliminar atributos anteriores del producto
+            $deleteQuery = "DELETE FROM " . $this->table_name . " WHERE producto_id = ?";
+            $deleteStmt = $this->conn->prepare($deleteQuery);
+            $deleteStmt->bindParam(1, $producto_id);
+            $deleteStmt->execute();
+            
+            // 2. Insertar nuevos atributos
+            if (!empty($atributos) && is_array($atributos)) {
+                $insertQuery = "INSERT INTO " . $this->table_name . " 
+                            (producto_id, atributo_id, valor) 
+                            VALUES (?, ?, ?)";
+                $insertStmt = $this->conn->prepare($insertQuery);
+                
+                foreach ($atributos as $atributo) {
+                    // Validar estructura del atributo
+                    if (!isset($atributo['atributo_id']) || !isset($atributo['valor'])) {
+                        continue; // Saltar atributos mal formados
+                    }
+                    
+                    $atributo_id = intval($atributo['atributo_id']);
+                    $valor = htmlspecialchars(strip_tags($atributo['valor']));
+                    
+                    // Saltar si el valor está vacío
+                    if (empty(trim($valor))) {
+                        continue;
+                    }
+                    
+                    // Verificar que el atributo existe
+                    if (!$this->atributoExists($atributo_id)) {
+                        error_log("Advertencia: Atributo ID {$atributo_id} no existe, saltando...");
+                        continue;
+                    }
+                    
+                    $insertStmt->bindParam(1, $producto_id);
+                    $insertStmt->bindParam(2, $atributo_id);
+                    $insertStmt->bindParam(3, $valor);
+                    $insertStmt->execute();
+                }
+            }
+            
+            // Confirmar transacción
+            $this->conn->commit();
+            return true;
+            
+        } catch (PDOException $e) {
+            // Revertir en caso de error
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+            error_log("Error PDO en saveProductoAtributos: " . $e->getMessage());
+            return false;
+        } catch (Exception $e) {
+            // Revertir en caso de error
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+            error_log("Error general en saveProductoAtributos: " . $e->getMessage());
+            return false;
+        }
+    }
 }
+
+
 ?>

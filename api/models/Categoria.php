@@ -112,17 +112,30 @@ class Categoria {
     }
     
     /**
-     * Obtener árbol de categorías (estructura jerárquica)
+     * Obtener árbol de categorías (estructura jerárquica) CON CONTEO DE PRODUCTOS
      */
     public function getTree() {
-        $query = "SELECT id, nombre, slug, parent_id 
-                  FROM " . $this->table_name . " 
-                  ORDER BY parent_id, nombre";
+        $query = "SELECT 
+                    c.id, 
+                    c.nombre, 
+                    c.slug, 
+                    c.parent_id,
+                    COUNT(DISTINCT p.id) as productos_count
+                FROM " . $this->table_name . " c
+                LEFT JOIN productos p ON c.id = p.categoria_id
+                GROUP BY c.id, c.nombre, c.slug, c.parent_id
+                ORDER BY c.parent_id, c.nombre";
         
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
         
         $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Convertir productos_count a integer
+        foreach ($categories as &$category) {
+            $category['productos_count'] = intval($category['productos_count']);
+        }
+        
         return $this->buildTree($categories);
     }
     
