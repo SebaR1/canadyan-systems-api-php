@@ -41,6 +41,14 @@ class AtributoController {
                 return;
             }
             
+            // Validar valores si es tipo 'select'
+            if ($input['tipo'] === 'select') {
+                if (empty($input['valores']) || !is_array($input['valores'])) {
+                    Response::error('Los atributos tipo "select" requieren un array de valores', 400);
+                    return;
+                }
+            }
+            
             // Crear instancia del modelo
             $atributo = new Atributo();
             
@@ -54,14 +62,27 @@ class AtributoController {
             $atributo->nombre = $input['nombre'];
             $atributo->tipo = $input['tipo'];
             
+            // Asignar valores si es tipo 'select'
+            if ($input['tipo'] === 'select' && isset($input['valores'])) {
+                $atributo->valores = $input['valores'];
+            }
+            
             // Crear atributo
             if ($atributo->create()) {
+                // Preparar respuesta
+                $respuesta = [
+                    'id' => $atributo->id,
+                    'nombre' => $atributo->nombre,
+                    'tipo' => $atributo->tipo
+                ];
+                
+                // Incluir valores en la respuesta si existen
+                if (!empty($atributo->valores)) {
+                    $respuesta['valores'] = $atributo->valores;
+                }
+                
                 Response::success('Atributo creado exitosamente', 201, [
-                    'atributo' => [
-                        'id' => $atributo->id,
-                        'nombre' => $atributo->nombre,
-                        'tipo' => $atributo->tipo
-                    ]
+                    'atributo' => $respuesta
                 ]);
             } else {
                 Response::error('Error al crear el atributo', 500);
@@ -171,36 +192,52 @@ class AtributoController {
                 return;
             }
             
+            // Crear instancia del modelo y verificar que existe
             $atributo = new Atributo();
             $atributo->id = intval($id);
             
-            // Verificar que el atributo existe
             if (!$atributo->readOne()) {
                 Response::error('Atributo no encontrado', 404);
                 return;
             }
             
-            // Asignar nuevos valores
-            $atributo->nombre = $input['nombre'] ?? $atributo->nombre;
-            $atributo->tipo = $input['tipo'] ?? $atributo->tipo;
-            
-            // Validar campos requeridos
-            if (empty($atributo->nombre)) {
-                Response::error('El nombre es requerido', 400);
-                return;
+            // Actualizar campos si están presentes
+            if (isset($input['nombre'])) {
+                $atributo->nombre = $input['nombre'];
             }
             
-            if (empty($atributo->tipo)) {
-                Response::error('El tipo es requerido', 400);
-                return;
+            if (isset($input['tipo'])) {
+                // Validar valores si el tipo es 'select'
+                if ($input['tipo'] === 'select') {
+                    if (empty($input['valores']) || !is_array($input['valores'])) {
+                        Response::error('Los atributos tipo "select" requieren un array de valores', 400);
+                        return;
+                    }
+                }
+                $atributo->tipo = $input['tipo'];
+            }
+            
+            // Asignar valores si están presentes y el tipo es 'select'
+            if (isset($input['valores'])) {
+                $atributo->valores = $input['valores'];
             }
             
             // Actualizar atributo
             if ($atributo->update()) {
-                $atributoActualizado = $atributo->readOne();
+                // Preparar respuesta
+                $respuesta = [
+                    'id' => $atributo->id,
+                    'nombre' => $atributo->nombre,
+                    'tipo' => $atributo->tipo
+                ];
+                
+                // Incluir valores en la respuesta si existen
+                if (!empty($atributo->valores)) {
+                    $respuesta['valores'] = $atributo->valores;
+                }
                 
                 Response::success('Atributo actualizado exitosamente', 200, [
-                    'atributo' => $atributoActualizado
+                    'atributo' => $respuesta
                 ]);
             } else {
                 Response::error('Error al actualizar el atributo', 500);
@@ -211,7 +248,7 @@ class AtributoController {
             Response::error('Error interno del servidor', 500);
         }
     }
-    
+
     /**
      * Eliminar atributo
      * DELETE /api/routes/atributos.php?action=delete&id=1

@@ -16,6 +16,7 @@ class Atributo {
     public $tipo;
     public $created_at;
     public $updated_at;
+    public $valores;
     
     // Constructor
     public function __construct() {
@@ -39,14 +40,25 @@ class Atributo {
                 return false;
             }
             
+            // Si es tipo 'select', validar y procesar valores
+            $valoresJson = null;
+            if ($this->tipo === 'select') {
+                if (empty($this->valores) || !is_array($this->valores)) {
+                    error_log("Error al crear atributo: Los atributos tipo 'select' requieren valores");
+                    return false;
+                }
+                $valoresJson = json_encode($this->valores);
+            }
+            
             $query = "INSERT INTO " . $this->table_name . " 
-                      SET nombre=:nombre, tipo=:tipo";
+                    SET nombre=:nombre, tipo=:tipo, valores=:valores";
             
             $stmt = $this->conn->prepare($query);
             
             // Bind parámetros
             $stmt->bindParam(':nombre', $this->nombre);
             $stmt->bindParam(':tipo', $this->tipo);
+            $stmt->bindParam(':valores', $valoresJson);
             
             if ($stmt->execute()) {
                 $this->id = $this->conn->lastInsertId();
@@ -64,7 +76,7 @@ class Atributo {
             return false;
         }
     }
-    
+
     /**
      * Leer todos los atributos - CON CONTEO DE PRODUCTOS
      */
@@ -73,26 +85,31 @@ class Atributo {
             $query = "SELECT 
                         a.id, 
                         a.nombre, 
-                        a.tipo, 
+                        a.tipo,
+                        a.valores, 
                         a.created_at, 
                         a.updated_at,
                         COUNT(DISTINCT pa.producto_id) as productos_count
                     FROM " . $this->table_name . " a
                     LEFT JOIN producto_atributos pa ON a.id = pa.atributo_id
-                    GROUP BY a.id, a.nombre, a.tipo, a.created_at, a.updated_at
+                    GROUP BY a.id, a.nombre, a.tipo, a.valores, a.created_at, a.updated_at
                     ORDER BY a.nombre ASC";
             
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             
-            $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $atributos = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // Convertir productos_count a integer
-            foreach ($result as &$row) {
-                $row['productos_count'] = intval($row['productos_count']);
+            // Decodificar valores JSON para cada atributo
+            foreach ($atributos as &$atributo) {
+                if (!empty($atributo['valores'])) {
+                    $atributo['valores'] = json_decode($atributo['valores'], true);
+                } else {
+                    $atributo['valores'] = null;
+                }
             }
             
-            return $result;
+            return $atributos;
             
         } catch (PDOException $e) {
             error_log("Error PDO al leer atributos: " . $e->getMessage());
@@ -108,10 +125,10 @@ class Atributo {
      */
     public function readOne() {
         try {
-            $query = "SELECT id, nombre, tipo, created_at, updated_at
-                      FROM " . $this->table_name . " 
-                      WHERE id = ? 
-                      LIMIT 1";
+            $query = "SELECT id, nombre, tipo, valores, created_at, updated_at 
+                    FROM " . $this->table_name . " 
+                    WHERE id = ? 
+                    LIMIT 1";
             
             $stmt = $this->conn->prepare($query);
             $stmt->bindParam(1, $this->id);
@@ -124,16 +141,21 @@ class Atributo {
                 $this->tipo = $row['tipo'];
                 $this->created_at = $row['created_at'];
                 $this->updated_at = $row['updated_at'];
-                return $row;
+                
+                // Decodificar valores JSON
+                if (!empty($row['valores'])) {
+                    $this->valores = json_decode($row['valores'], true);
+                } else {
+                    $this->valores = null;
+                }
+                
+                return true;
             }
             
             return false;
             
         } catch (PDOException $e) {
-            error_log("Error PDO al leer atributo ID {$this->id}: " . $e->getMessage());
-            return false;
-        } catch (Exception $e) {
-            error_log("Error general al leer atributo ID {$this->id}: " . $e->getMessage());
+            error_log("Error PDO al leer atributo: " . $e->getMessage());
             return false;
         }
     }
@@ -146,7 +168,6 @@ class Atributo {
             // Limpiar datos
             $this->nombre = htmlspecialchars(strip_tags($this->nombre));
             $this->tipo = htmlspecialchars(strip_tags($this->tipo));
-            $this->id = intval($this->id);
             
             // Validar tipo
             $tiposPermitidos = ['text', 'select', 'number', 'boolean'];
@@ -155,30 +176,40 @@ class Atributo {
                 return false;
             }
             
+            // Si es tipo 'select', validar y procesar valores
+            $valoresJson = null;
+            if ($this->tipo === 'select') {
+                if (empty($this->valores) || !is_array($this->valores)) {
+                    error_log("Error al actualizar atributo: Los atributos tipo 'select' requieren valores");
+                    return false;
+                }
+                $valoresJson = json_encode($this->valores);
+            }
+            
             $query = "UPDATE " . $this->table_name . " 
-                      SET nombre = :nombre, 
-                          tipo = :tipo 
-                      WHERE id = :id";
+                    SET nombre=:nombre, tipo=:tipo, valores=:valores 
+                    WHERE id=:id";
             
             $stmt = $this->conn->prepare($query);
             
             // Bind parámetros
             $stmt->bindParam(':nombre', $this->nombre);
             $stmt->bindParam(':tipo', $this->tipo);
+            $stmt->bindParam(':valores', $valoresJson);
             $stmt->bindParam(':id', $this->id);
             
             if ($stmt->execute()) {
                 return true;
             }
             
-            error_log("Error al actualizar atributo ID {$this->id}: No se pudo ejecutar la query");
+            error_log("Error al actualizar atributo: No se pudo ejecutar la query");
             return false;
             
         } catch (PDOException $e) {
-            error_log("Error PDO al actualizar atributo ID {$this->id}: " . $e->getMessage());
+            error_log("Error PDO al actualizar atributo: " . $e->getMessage());
             return false;
         } catch (Exception $e) {
-            error_log("Error general al actualizar atributo ID {$this->id}: " . $e->getMessage());
+            error_log("Error general al actualizar atributo: " . $e->getMessage());
             return false;
         }
     }
