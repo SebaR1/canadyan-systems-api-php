@@ -65,28 +65,38 @@ class Atributo {
         }
     }
     
-    /**
-     * Leer todos los atributos
-     */
-    public function readAll() {
-        try {
-            $query = "SELECT id, nombre, tipo, created_at, updated_at
-                      FROM " . $this->table_name . " 
-                      ORDER BY nombre ASC";
-            
-            $stmt = $this->conn->prepare($query);
-            $stmt->execute();
-            
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-        } catch (PDOException $e) {
-            error_log("Error PDO al leer atributos: " . $e->getMessage());
-            return [];
-        } catch (Exception $e) {
-            error_log("Error general al leer atributos: " . $e->getMessage());
-            return [];
-        }
+/**
+ * Leer todos los atributos - CON DEBUG
+ */
+public function readAll() {
+    try {
+        $query = "SELECT id, nombre, tipo, created_at, updated_at
+                  FROM " . $this->table_name . " 
+                  ORDER BY nombre ASC";
+        
+        // DEBUG: Log de la query
+        error_log("DEBUG ATRIBUTOS - Query: " . $query);
+        error_log("DEBUG ATRIBUTOS - Tabla: " . $this->table_name);
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // DEBUG: Log del resultado
+        error_log("DEBUG ATRIBUTOS - Filas encontradas: " . count($result));
+        error_log("DEBUG ATRIBUTOS - Resultado: " . print_r($result, true));
+        
+        return $result;
+        
+    } catch (PDOException $e) {
+        error_log("Error PDO al leer atributos: " . $e->getMessage());
+        return [];
+    } catch (Exception $e) {
+        error_log("Error general al leer atributos: " . $e->getMessage());
+        return [];
     }
+}
     
     /**
      * Obtener atributo por ID
@@ -398,7 +408,7 @@ class Atributo {
                     AND pa.valor != ''
                     ORDER BY a.nombre, pa.valor";
 
-                                error_log("FILTROS DINÁMICOS - Query: " . $query);
+            error_log("FILTROS DINÁMICOS - Query: " . $query);
             error_log("FILTROS DINÁMICOS - Params: " . print_r($params, true));
             error_log("FILTROS DINÁMICOS - Filtros aplicados: " . print_r($filtros_aplicados, true));
 
