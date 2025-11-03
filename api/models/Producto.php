@@ -500,5 +500,50 @@ public function getByCategory($categoryId, $limit = null, $offset = 0) {
             return false;
         }
     }
+    
+    /**
+     * Cambiar estado activo/inactivo del producto (toggle)
+     */
+    public function toggleActive() {
+        try {
+            // Primero obtener el estado actual
+            $query = "SELECT activo FROM " . $this->table_name . " WHERE id = :id";
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':id', $this->id);
+            $stmt->execute();
+            
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$result) {
+                error_log("Error al toggle producto: Producto ID {$this->id} no encontrado");
+                return false;
+            }
+            
+            // Invertir el estado actual
+            $nuevoEstado = $result['activo'] == 1 ? 0 : 1;
+            
+            // Actualizar en la base de datos
+            $updateQuery = "UPDATE " . $this->table_name . " SET activo = :activo WHERE id = :id";
+            $updateStmt = $this->conn->prepare($updateQuery);
+            $updateStmt->bindParam(':activo', $nuevoEstado);
+            $updateStmt->bindParam(':id', $this->id);
+            
+            if ($updateStmt->execute()) {
+                $this->activo = $nuevoEstado;
+                return true;
+            }
+            
+            error_log("Error al hacer toggle del producto ID {$this->id}: No se pudo ejecutar la query");
+            return false;
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO al hacer toggle del producto ID {$this->id}: " . $e->getMessage());
+            return false;
+        } catch (Exception $e) {
+            error_log("Error general al hacer toggle del producto ID {$this->id}: " . $e->getMessage());
+            return false;
+        }
+    }
+
 }
 ?>
