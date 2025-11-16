@@ -109,9 +109,21 @@ class ProductoAtributo {
             $query = "SELECT DISTINCT 
                         p.id, p.nombre, p.descripcion, p.precio, p.stock, 
                         p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
-                        c.nombre as categoria_nombre
+                        c.nombre as categoria_nombre,
+                        pi.url as imagen_principal_url
                     FROM productos p
                     LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN (
+                        SELECT producto_id, url 
+                        FROM producto_imagenes 
+                        WHERE tipo = 'principal' 
+                        OR id IN (
+                            SELECT MIN(id) 
+                            FROM producto_imagenes 
+                            GROUP BY producto_id
+                        )
+                        GROUP BY producto_id
+                    ) pi ON p.id = pi.producto_id
                     WHERE p.activo = 1";
             
             $finalParams = [];
@@ -175,13 +187,24 @@ class ProductoAtributo {
             $query = "SELECT DISTINCT 
                         p.id, p.nombre, p.descripcion, p.precio, p.stock, 
                         p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
-                        c.nombre as categoria_nombre
+                        c.nombre as categoria_nombre,
+                        pi.url as imagen_principal_url
                     FROM productos p
                     LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN (
+                        SELECT producto_id, url 
+                        FROM producto_imagenes 
+                        WHERE tipo = 'principal' 
+                        OR id IN (
+                            SELECT MIN(id) 
+                            FROM producto_imagenes 
+                            GROUP BY producto_id
+                        )
+                        GROUP BY producto_id
+                    ) pi ON p.id = pi.producto_id
                     WHERE p.activo = 1";
             
             $params = [];
-            
             // AGREGAR FILTRO POR CATEGORÍA
             if ($categoria_id !== null) {
                 $query .= " AND (p.categoria_id = ? OR c.parent_id = ?)";

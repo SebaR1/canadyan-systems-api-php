@@ -84,12 +84,24 @@ class Producto {
             $whereClause = $activeOnly ? "WHERE p.activo = 1" : "";
             
             $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
-                             c.nombre as categoria_nombre
-                      FROM " . $this->table_name . " p
-                      LEFT JOIN categorias c ON p.categoria_id = c.id
-                      {$whereClause}
-                      ORDER BY p.created_at DESC";
+                            p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                            c.nombre as categoria_nombre,
+                            pi.url as imagen_principal_url
+                    FROM " . $this->table_name . " p
+                    LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN (
+                        SELECT producto_id, url 
+                        FROM producto_imagenes 
+                        WHERE tipo = 'principal' 
+                            OR id IN (
+                                SELECT MIN(id) 
+                                FROM producto_imagenes 
+                                GROUP BY producto_id
+                            )
+                        GROUP BY producto_id
+                    ) pi ON p.id = pi.producto_id
+                    {$whereClause}
+                    ORDER BY p.created_at DESC";
             
             if ($limit) {
                 $query .= " LIMIT :limit OFFSET :offset";
@@ -168,12 +180,24 @@ class Producto {
 public function getByCategory($categoryId, $limit = null, $offset = 0) {
     try {
         $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                         p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
-                         c.nombre as categoria_nombre
-                  FROM " . $this->table_name . " p
-                  LEFT JOIN categorias c ON p.categoria_id = c.id
-                  WHERE p.categoria_id = ? AND p.activo = 1
-                  ORDER BY p.nombre ASC";
+                        p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                        c.nombre as categoria_nombre,
+                        pi.url as imagen_principal_url
+                FROM " . $this->table_name . " p
+                LEFT JOIN categorias c ON p.categoria_id = c.id
+                LEFT JOIN (
+                    SELECT producto_id, url 
+                    FROM producto_imagenes 
+                    WHERE tipo = 'principal' 
+                        OR id IN (
+                            SELECT MIN(id) 
+                            FROM producto_imagenes 
+                            GROUP BY producto_id
+                        )
+                    GROUP BY producto_id
+                ) pi ON p.id = pi.producto_id
+                WHERE p.categoria_id = ? AND p.activo = 1
+                ORDER BY p.nombre ASC";
         
         $params = [$categoryId];
         
@@ -207,9 +231,21 @@ public function getByCategory($categoryId, $limit = null, $offset = 0) {
             
             $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
-                            c.nombre as categoria_nombre
+                            c.nombre as categoria_nombre,
+                            pi.url as imagen_principal_url
                     FROM " . $this->table_name . " p
                     LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN (
+                        SELECT producto_id, url 
+                        FROM producto_imagenes 
+                        WHERE tipo = 'principal' 
+                        OR id IN (
+                            SELECT MIN(id) 
+                            FROM producto_imagenes 
+                            GROUP BY producto_id
+                        )
+                        GROUP BY producto_id
+                    ) pi ON p.id = pi.producto_id
                     WHERE (p.nombre LIKE ? OR p.descripcion LIKE ?) 
                     AND p.activo = 1
                     ORDER BY p.nombre ASC";
