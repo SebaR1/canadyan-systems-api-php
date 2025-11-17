@@ -82,16 +82,23 @@ class ProductoController {
      */
     public function list() {
         try {
-            // Parámetros de paginación
-            $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
+            // Aceptar tanto page como offset
             $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
             $activeOnly = isset($_GET['active_only']) ? (bool)$_GET['active_only'] : true;
             
-            // Validar parámetros
-            if ($page < 1) $page = 1;
+            // Validar limit
             if ($limit < 1 || $limit > 100) $limit = 10;
             
-            $offset = ($page - 1) * $limit;
+            // Determinar offset: usar directamente si está presente, sino calcular desde page
+            if (isset($_GET['offset'])) {
+                $offset = intval($_GET['offset']);
+                if ($offset < 0) $offset = 0;
+                $page = floor($offset / $limit) + 1;
+            } else {
+                $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
+                if ($page < 1) $page = 1;
+                $offset = ($page - 1) * $limit;
+            }
             
             $producto = new Producto();
             $productos = $producto->readAll($limit, $offset, $activeOnly);
@@ -352,7 +359,6 @@ class ProductoController {
         try {
             // Obtener parámetros
             $searchTerm = $_GET['q'] ?? '';
-            $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
             $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
             
             if (empty($searchTerm)) {
@@ -360,11 +366,19 @@ class ProductoController {
                 return;
             }
             
-            // Validar parámetros
-            if ($page < 1) $page = 1;
+            // Validar limit
             if ($limit < 1 || $limit > 100) $limit = 10;
             
-            $offset = ($page - 1) * $limit;
+            // ✅ MODIFICADO: Aceptar tanto page como offset
+            if (isset($_GET['offset'])) {
+                $offset = intval($_GET['offset']);
+                if ($offset < 0) $offset = 0;
+                $page = floor($offset / $limit) + 1;
+            } else {
+                $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
+                if ($page < 1) $page = 1;
+                $offset = ($page - 1) * $limit;
+            }
             
             $producto = new Producto();
             $productos = $producto->search($searchTerm, $limit, $offset);
@@ -393,7 +407,6 @@ class ProductoController {
         try {
             // Obtener parámetros
             $categoriaId = $_GET['categoria_id'] ?? '';
-            $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
             $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
             
             if (empty($categoriaId) || !is_numeric($categoriaId)) {
@@ -401,11 +414,19 @@ class ProductoController {
                 return;
             }
             
-            // Validar parámetros
-            if ($page < 1) $page = 1;
+            // Validar limit
             if ($limit < 1 || $limit > 100) $limit = 10;
             
-            $offset = ($page - 1) * $limit;
+            // ✅ MODIFICADO: Aceptar tanto page como offset
+            if (isset($_GET['offset'])) {
+                $offset = intval($_GET['offset']);
+                if ($offset < 0) $offset = 0;
+                $page = floor($offset / $limit) + 1;
+            } else {
+                $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
+                if ($page < 1) $page = 1;
+                $offset = ($page - 1) * $limit;
+            }
             
             // Verificar que la categoría existe
             $categoria = new Categoria();
