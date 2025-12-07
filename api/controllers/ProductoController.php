@@ -146,38 +146,44 @@ class ProductoController {
             error_log("  - page: " . $page);
             error_log("  - limit: " . $limit);
             
-            // Admin ve todos los productos (activos e inactivos)
-            $activeOnly = false;
-            
+            // ✅ NUEVOS PARÁMETROS DE FILTROS
+            $categoria_id = isset($_GET['categoria_id']) && is_numeric($_GET['categoria_id']) 
+                ? intval($_GET['categoria_id']) 
+                : null;
+                
+            $activo = isset($_GET['activo']) && $_GET['activo'] !== '' 
+                ? intval($_GET['activo']) 
+                : null;
+
             // Validar parámetros
             if ($page < 1) $page = 1;
             if ($limit < 1 || $limit > 100) $limit = 10;
-            
+
             $offset = ($page - 1) * $limit;
-            
+
+            // ✅ DEBUG: Log extendido para diagnosticar
+            error_log("🔍 PRODUCTO ADMIN FILTERS - Parámetros recibidos:");
+            error_log("  - search: '" . $search . "'");
+            error_log("  - categoria_id: " . ($categoria_id ?? 'null'));
+            error_log("  - activo: " . ($activo !== null ? $activo : 'null'));
+            error_log("  - page: " . $page);
+            error_log("  - limit: " . $limit);
+
             $producto = new Producto();
-            
-            // ✅ SOLUCIÓN: Usar búsqueda si se proporciona término
-            if (!empty($search)) {
-                error_log("🔍 PRODUCTO ADMIN SEARCH - Usando búsqueda con término: '" . $search . "'");
-                
-                // Usar el método search del modelo
-                $productos = $producto->search($search, $limit, $offset);
-                
-                // Para contar el total, necesitamos hacer una búsqueda sin límite
-                $productosTotal = $producto->search($search);
-                $total = count($productosTotal);
-                
-                error_log("🔍 PRODUCTO ADMIN SEARCH - Resultados encontrados: " . count($productos));
-                error_log("🔍 PRODUCTO ADMIN SEARCH - Total sin paginación: " . $total);
-                
-            } else {
-                error_log("🔍 PRODUCTO ADMIN SEARCH - Sin término de búsqueda, mostrando todos");
-                
-                // Sin búsqueda, mostrar todos
-                $productos = $producto->readAll($limit, $offset, $activeOnly);
-                $total = $producto->countTotal($activeOnly);
-            }
+
+            // ✅ NUEVO: Construir array de filtros
+            $filtros = [
+                'search' => $search,
+                'categoria_id' => $categoria_id,
+                'activo' => $activo
+            ];
+
+            // ✅ USAR LOS NUEVOS MÉTODOS readAllFiltered y countFiltered
+            $productos = $producto->readAllFiltered($limit, $offset, $filtros);
+            $total = $producto->countFiltered($filtros);
+
+            error_log("🔍 PRODUCTO ADMIN FILTERS - Resultados encontrados: " . count($productos));
+            error_log("🔍 PRODUCTO ADMIN FILTERS - Total: " . $total);
             
             $totalPages = ceil($total / $limit);
             

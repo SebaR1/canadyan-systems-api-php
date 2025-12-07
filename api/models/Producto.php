@@ -128,7 +128,186 @@ class Producto {
             return [];
         }
     }
-    
+
+    /**
+     * Leer productos con filtros avanzados (para admin)
+     * Soporta filtros de búsqueda, categoría y estado
+     */
+    public function readAllFiltered($limit = null, $offset = 0, $filters = []) {
+        try {
+            // Extraer filtros
+            $search = $filters['search'] ?? '';
+            $categoria_id = $filters['categoria_id'] ?? null;
+            $activo = $filters['activo'] ?? null; // null = todos, 1 = activos, 0 = inactivos
+            
+            // Construir WHERE clause dinámicamente
+            $whereConditions = [];
+            $params = [];
+            
+            // Filtro de búsqueda
+            if (!empty($search)) {
+                $searchPattern = '%' . htmlspecialchars(strip_tags($search)) . '%';
+                $whereConditions[] = "(p.nombre LIKE ? OR p.descripcion LIKE ?)";
+                $params[] = $searchPattern;
+                $params[] = $searchPattern;
+            }
+            
+            // Filtro de categoría
+            if ($categoria_id !== null && is_numeric($categoria_id)) {
+                // Obtener IDs de subcategorías si existen
+                $querySubcats = "SELECT id FROM categorias WHERE parent_id = ?";
+                $stmtSubcats = $this->conn->prepare($querySubcats);
+                $stmtSubcats->bindValue(1, intval($categoria_id));
+                $stmtSubcats->execute();
+                $subcategorias = $stmtSubcats->fetchAll(PDO::FETCH_COLUMN);
+                
+                if (!empty($subcategorias)) {
+                    // Tiene subcategorías - incluir padre + hijos
+                    $idsIncluir = array_merge([intval($categoria_id)], array_map('intval', $subcategorias));
+                    $placeholders = implode(',', array_fill(0, count($idsIncluir), '?'));
+                    $whereConditions[] = "p.categoria_id IN ($placeholders)";
+                    foreach ($idsIncluir as $id) {
+                        $params[] = $id;
+                    }
+                } else {
+                    // No tiene subcategorías - solo el ID dado
+                    $whereConditions[] = "p.categoria_id = ?";
+                    $params[] = intval($categoria_id);
+                }
+            }
+            
+            // Filtro de estado
+            if ($activo !== null) {
+                $whereConditions[] = "p.activo = ?";
+                $params[] = intval($activo);
+            }
+            
+            // Construir query
+            $whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
+            
+            $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
+                            p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                            c.nombre as categoria_nombre,
+                            pi.url as imagen_principal_url
+                    FROM " . $this->table_name . " p
+                    LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN (
+                        SELECT producto_id, url 
+                        FROM producto_imagenes 
+                        WHERE tipo = 'principal' 
+                            OR id IN (
+                                SELECT MIN(id) 
+                                FROM producto_imagenes 
+                                GROUP BY producto_id
+                            )
+                        GROUP BY producto_id
+                    ) pi ON p.id = pi.producto_id
+                    {$whereClause}
+                    ORDER BY p.created_at DESC";
+            
+            if ($limit) {
+                $query .= " LIMIT ? OFFSET ?";
+                $params[] = intval($limit);
+                $params[] = intval($offset);
+            }
+            
+            $stmt = $this->conn->prepare($query);
+            
+            // Bind parameters
+            foreach ($params as $index => $value) {
+                $stmt->bindValue($index + 1, $value);
+            }
+            
+            $stmt->execute();
+            $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            return $this->processProductData($productos);
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO en readAllFiltered: " . $e->getMessage());
+            error_log("Query: " . ($query ?? 'N/A'));
+            error_log("Params: " . print_r($params ?? [], true));
+            return [];
+        } catch (Exception $e) {
+            error_log("Error general en readAllFiltered: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Contar productos con filtros (para paginación en admin)
+     */
+    public function countFiltered($filters = []) {
+        try {
+            // Extraer filtros
+            $search = $filters['search'] ?? '';
+            $categoria_id = $filters['categoria_id'] ?? null;
+            $activo = $filters['activo'] ?? null;
+            
+            // Construir WHERE clause
+            $whereConditions = [];
+            $params = [];
+            
+            if (!empty($search)) {
+                $searchPattern = '%' . htmlspecialchars(strip_tags($search)) . '%';
+                $whereConditions[] = "(nombre LIKE ? OR descripcion LIKE ?)";
+                $params[] = $searchPattern;
+                $params[] = $searchPattern;
+            }
+
+            // Filtro de categoría
+            if ($categoria_id !== null && is_numeric($categoria_id)) {
+                // Obtener IDs de subcategorías si existen
+                $querySubcats = "SELECT id FROM categorias WHERE parent_id = ?";
+                $stmtSubcats = $this->conn->prepare($querySubcats);
+                $stmtSubcats->bindValue(1, intval($categoria_id));
+                $stmtSubcats->execute();
+                $subcategorias = $stmtSubcats->fetchAll(PDO::FETCH_COLUMN);
+                
+                if (!empty($subcategorias)) {
+                    // Tiene subcategorías - incluir padre + hijos
+                    $idsIncluir = array_merge([intval($categoria_id)], array_map('intval', $subcategorias));
+                    $placeholders = implode(',', array_fill(0, count($idsIncluir), '?'));
+                    $whereConditions[] = "p.categoria_id IN ($placeholders)";
+                    foreach ($idsIncluir as $id) {
+                        $params[] = $id;
+                    }
+                } else {
+                    // No tiene subcategorías - solo el ID dado
+                    $whereConditions[] = "p.categoria_id = ?";
+                    $params[] = intval($categoria_id);
+                }
+            }
+            
+            if ($activo !== null) {
+                $whereConditions[] = "activo = ?";
+                $params[] = intval($activo);
+            }
+            
+            $whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
+            
+            $query = "SELECT COUNT(*) as total FROM " . $this->table_name . " " . $whereClause;
+            
+            $stmt = $this->conn->prepare($query);
+            
+            foreach ($params as $index => $value) {
+                $stmt->bindValue($index + 1, $value);
+            }
+            
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return intval($result['total']);
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO en countFiltered: " . $e->getMessage());
+            return 0;
+        } catch (Exception $e) {
+            error_log("Error general en countFiltered: " . $e->getMessage());
+            return 0;
+        }
+    }
+
     /**
      * Obtener producto por ID
      */
