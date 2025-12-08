@@ -205,6 +205,30 @@ try {
             }
             $controller->toggle();
             break;
+
+        /**
+         * Obtener productos destacados
+         * GET /api/routes/productos.php?action=featured&limit=6
+         */
+        case 'featured':
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                Response::error('Método no permitido. Use GET.', 405);
+                break;
+            }
+            $controller->featured();
+            break;
+
+        /**
+         * Cambiar estado destacado
+         * PATCH /api/routes/productos.php?action=toggle-featured&id=1
+         */
+        case 'toggle-featured':
+            if ($_SERVER['REQUEST_METHOD'] !== 'PATCH') {
+                Response::error('Método no permitido. Use PATCH.', 405);
+                break;
+            }
+            $controller->toggleFeatured();
+            break;
             
         /**
          * Obtener estadísticas (Solo Admin)

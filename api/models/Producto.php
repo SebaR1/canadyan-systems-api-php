@@ -18,6 +18,7 @@ class Producto {
     public $stock;
     public $categoria_id;
     public $sku;
+    public $destacado;
     public $activo;
     public $created_at;
     public $updated_at;
@@ -58,7 +59,12 @@ class Producto {
         if (isset($producto['stock'])) {
             $producto['stock'] = intval($producto['stock']);
         }
-        
+
+        // Asegurar que destacado sea boolean (1/0)
+        if (isset($producto['destacado'])) {
+            $producto['destacado'] = intval($producto['destacado']);
+        }
+
         // Asegurar que activo sea boolean (1/0)
         if (isset($producto['activo'])) {
             $producto['activo'] = intval($producto['activo']);
@@ -84,7 +90,7 @@ class Producto {
             $whereClause = $activeOnly ? "WHERE p.activo = 1" : "";
             
             $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                            p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                            p.categoria_id, p.sku, p.activo, p.destacado, p.created_at, p.updated_at,
                             c.nombre as categoria_nombre,
                             pi.url as imagen_principal_url
                     FROM " . $this->table_name . " p
@@ -186,7 +192,7 @@ class Producto {
             $whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
             
             $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                            p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                            p.categoria_id, p.sku, p.activo, p.destacado, p.created_at, p.updated_at,
                             c.nombre as categoria_nombre,
                             pi.url as imagen_principal_url
                     FROM " . $this->table_name . " p
@@ -280,13 +286,13 @@ class Producto {
             }
             
             if ($activo !== null) {
-                $whereConditions[] = "activo = ?";
+                $whereConditions[] = "p.activo = ?";
                 $params[] = intval($activo);
             }
-            
+
             $whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
-            
-            $query = "SELECT COUNT(*) as total FROM " . $this->table_name . " " . $whereClause;
+
+            $query = "SELECT COUNT(*) as total FROM " . $this->table_name . " p " . $whereClause;
             
             $stmt = $this->conn->prepare($query);
             
@@ -314,7 +320,7 @@ class Producto {
     public function readOne() {
         try {
             $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                             p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                            p.categoria_id, p.sku, p.activo, p.destacado, p.created_at, p.updated_at,
                              c.nombre as categoria_nombre
                       FROM " . $this->table_name . " p
                       LEFT JOIN categorias c ON p.categoria_id = c.id
@@ -339,6 +345,7 @@ class Producto {
                 $this->categoria_id = $processedRow['categoria_id'];
                 $this->sku = $processedRow['sku'];
                 $this->activo = $processedRow['activo'];
+                $this->destacado = $processedRow['destacado'];
                 $this->created_at = $processedRow['created_at'];
                 $this->updated_at = $processedRow['updated_at'];
                 
@@ -359,7 +366,7 @@ class Producto {
 public function getByCategory($categoryId, $limit = null, $offset = 0) {
     try {
         $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                        p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+                        p.categoria_id, p.sku, p.activo, p.destacado, p.created_at, p.updated_at,
                         c.nombre as categoria_nombre,
                         pi.url as imagen_principal_url
                 FROM " . $this->table_name . " p
@@ -408,8 +415,8 @@ public function getByCategory($categoryId, $limit = null, $offset = 0) {
             // Preparar término de búsqueda
             $searchPattern = '%' . htmlspecialchars(strip_tags($searchTerm)) . '%';
             
-            $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
-                            p.categoria_id, p.sku, p.activo, p.created_at, p.updated_at,
+            $query = "SEL ECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
+                            p.categoria_id, p.sku, p.activo, p.destacado, p.created_at, p.updated_at,
                             c.nombre as categoria_nombre,
                             pi.url as imagen_principal_url
                     FROM " . $this->table_name . " p
@@ -756,6 +763,87 @@ public function getByCategory($categoryId, $limit = null, $offset = 0) {
             return false;
         } catch (Exception $e) {
             error_log("Error general al hacer toggle del producto ID {$this->id}: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Obtener productos destacados
+     */
+    public function getFeatured($limit = 6) {
+        try {
+            $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
+                            p.categoria_id, p.sku, p.activo, p.destacado, p.created_at, p.updated_at,
+                            c.nombre as categoria_nombre,
+                            pi.url as imagen_principal_url
+                    FROM " . $this->table_name . " p
+                    LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN (
+                        SELECT producto_id, url 
+                        FROM producto_imagenes 
+                        WHERE tipo = 'principal' 
+                            OR id IN (
+                                SELECT MIN(id) 
+                                FROM producto_imagenes 
+                                GROUP BY producto_id
+                            )
+                        GROUP BY producto_id
+                    ) pi ON p.id = pi.producto_id
+                    WHERE p.activo = 1 AND p.destacado = 1
+                    ORDER BY p.updated_at DESC
+                    LIMIT ?";
+            
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(1, $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return $this->processProductData($productos);
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO al obtener productos destacados: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Cambiar estado destacado del producto (toggle)
+     */
+    public function toggleFeatured() {
+        try {
+            // Obtener el estado actual
+            $query = "SELECT destacado FROM " . $this->table_name . " WHERE id = :id";
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':id', $this->id);
+            $stmt->execute();
+            
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$result) {
+                error_log("Error al toggle destacado: Producto ID {$this->id} no encontrado");
+                return false;
+            }
+            
+            // Invertir el estado
+            $nuevoEstado = $result['destacado'] == 1 ? 0 : 1;
+            
+            // Actualizar
+            $updateQuery = "UPDATE " . $this->table_name . " 
+                        SET destacado = :destacado, updated_at = CURRENT_TIMESTAMP 
+                        WHERE id = :id";
+            $updateStmt = $this->conn->prepare($updateQuery);
+            $updateStmt->bindParam(':destacado', $nuevoEstado);
+            $updateStmt->bindParam(':id', $this->id);
+            
+            if ($updateStmt->execute()) {
+                $this->destacado = $nuevoEstado;
+                return true;
+            }
+            
+            return false;
+            
+        } catch (PDOException $e) {
+            error_log("Error PDO al hacer toggle destacado del producto ID {$this->id}: " . $e->getMessage());
             return false;
         }
     }

@@ -559,6 +559,77 @@ class ProductoController {
             Response::error('Error interno del servidor', 500);
         }
     }
+
+    /**
+     * Obtener productos destacados
+     * GET /api/routes/productos.php?action=featured&limit=6
+     */
+    public function featured() {
+        try {
+            $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 6;
+            
+            // Validar limit
+            if ($limit < 1 || $limit > 20) $limit = 6;
+            
+            $producto = new Producto();
+            $productos = $producto->getFeatured($limit);
+            
+            Response::success('Productos destacados obtenidos exitosamente', 200, [
+                'productos' => $productos,
+                'total' => count($productos)
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("Error en ProductoController::featured: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+
+    /**
+     * Cambiar estado destacado
+     * PATCH /api/routes/productos.php?action=toggle-featured&id=1
+     */
+    public function toggleFeatured() {
+        try {
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+            
+            $id = $_GET['id'] ?? '';
+            
+            if (empty($id) || !is_numeric($id)) {
+                Response::error('ID de producto requerido y debe ser numérico', 400);
+                return;
+            }
+            
+            $producto = new Producto();
+            $producto->id = intval($id);
+            
+            // Obtener estado actual
+            $estadoAnterior = $producto->readOne();
+            if (!$estadoAnterior) {
+                Response::error('Producto no encontrado', 404);
+                return;
+            }
+            
+            // Cambiar estado destacado
+            if ($producto->toggleFeatured()) {
+                Response::success('Estado destacado cambiado exitosamente', 200, [
+                    'producto_id' => $producto->id,
+                    'destacado_anterior' => (bool)$estadoAnterior['destacado'],
+                    'destacado_nuevo' => (bool)$producto->destacado
+                ]);
+            } else {
+                Response::error('Error al cambiar el estado destacado', 500);
+            }
+            
+        } catch (Exception $e) {
+            error_log("Error en ProductoController::toggleFeatured: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
     
     /**
      * Obtener estadísticas de productos (Solo Admin)
