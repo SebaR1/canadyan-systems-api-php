@@ -16,12 +16,18 @@ class AtributoController {
      */
     public function create() {
         try {
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Se requieren permisos de administrador.', 403);
+                return;
+            }
+
             // Verificar que sea POST
             if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
                 Response::error('Método no permitido', 405);
                 return;
             }
-            
+
             // Obtener datos JSON
             $input = json_decode(file_get_contents('php://input'), true);
             
@@ -170,12 +176,18 @@ class AtributoController {
      */
     public function update() {
         try {
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Se requieren permisos de administrador.', 403);
+                return;
+            }
+
             // Verificar que sea PUT
             if ($_SERVER['REQUEST_METHOD'] !== 'PUT') {
                 Response::error('Método no permitido', 405);
                 return;
             }
-            
+
             // Obtener ID del query string
             $id = $_GET['id'] ?? '';
             
@@ -255,12 +267,18 @@ class AtributoController {
      */
     public function delete() {
         try {
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Se requieren permisos de administrador.', 403);
+                return;
+            }
+
             // Verificar que sea DELETE
             if ($_SERVER['REQUEST_METHOD'] !== 'DELETE') {
                 Response::error('Método no permitido', 405);
                 return;
             }
-            
+
             // Obtener ID del query string
             $id = $_GET['id'] ?? '';
             
@@ -491,6 +509,32 @@ class AtributoController {
             error_log("Error en AtributoController::getDynamicFilters: " . $e->getMessage());
             Response::error('Error interno del servidor', 500);
         }
+    }
+
+    /**
+     * Iniciar sesión con configuración CORS
+     */
+    private function startSessionWithCORS() {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_set_cookie_params([
+                'lifetime' => 0,
+                'path' => '/',
+                'domain' => '',
+                'secure' => false,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]);
+            session_start();
+        }
+    }
+
+    /**
+     * Verificar que el usuario sea admin
+     */
+    private function isAdmin() {
+        $this->startSessionWithCORS();
+        $user_type = $_SESSION['user_type'] ?? null;
+        return $user_type == 2; // Tipo 2 = Admin
     }
 }
 

@@ -124,8 +124,8 @@ class ProductoController {
     }
 
     /**
-     * Listar todos los productos para admin con paginación Y BÚSQUEDA
-     * GET /api/routes/productos.php?action=list-admin&page=1&limit=10&search=termino
+     * Listar todos los productos para admin con paginación Y BÚSQUEDA Y FILTROS
+     * GET /api/routes/productos.php?action=list-admin&page=1&limit=10&search=termino&categoria_id=1&activo=1&destacado=1&tiene_imagen=1
      */
     public function listAdmin() {
         try {
@@ -140,13 +140,7 @@ class ProductoController {
             $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
             $search = isset($_GET['search']) ? trim($_GET['search']) : '';
             
-            // ✅ DEBUG: Log para diagnosticar
-            error_log("🔍 PRODUCTO ADMIN SEARCH - Parámetros recibidos:");
-            error_log("  - search: '" . $search . "'");
-            error_log("  - page: " . $page);
-            error_log("  - limit: " . $limit);
-            
-            // ✅ NUEVOS PARÁMETROS DE FILTROS
+            // PARÁMETROS DE FILTROS EXISTENTES
             $categoria_id = isset($_GET['categoria_id']) && is_numeric($_GET['categoria_id']) 
                 ? intval($_GET['categoria_id']) 
                 : null;
@@ -155,30 +149,42 @@ class ProductoController {
                 ? intval($_GET['activo']) 
                 : null;
 
+            $destacado = isset($_GET['destacado']) && $_GET['destacado'] !== '' 
+                ? intval($_GET['destacado']) 
+                : null;
+                
+            $tiene_imagen = isset($_GET['tiene_imagen']) && $_GET['tiene_imagen'] !== '' 
+                ? intval($_GET['tiene_imagen']) 
+                : null;
+
             // Validar parámetros
             if ($page < 1) $page = 1;
             if ($limit < 1 || $limit > 100) $limit = 10;
 
             $offset = ($page - 1) * $limit;
 
-            // ✅ DEBUG: Log extendido para diagnosticar
+            // DEBUG: Log extendido para diagnosticar
             error_log("🔍 PRODUCTO ADMIN FILTERS - Parámetros recibidos:");
             error_log("  - search: '" . $search . "'");
             error_log("  - categoria_id: " . ($categoria_id ?? 'null'));
             error_log("  - activo: " . ($activo !== null ? $activo : 'null'));
+            error_log("  - destacado: " . ($destacado !== null ? $destacado : 'null'));
+            error_log("  - tiene_imagen: " . ($tiene_imagen !== null ? $tiene_imagen : 'null'));
             error_log("  - page: " . $page);
             error_log("  - limit: " . $limit);
 
             $producto = new Producto();
 
-            // ✅ NUEVO: Construir array de filtros
+            //Construir array de filtros con los nuevos filtros
             $filtros = [
                 'search' => $search,
                 'categoria_id' => $categoria_id,
-                'activo' => $activo
+                'activo' => $activo,
+                'destacado' => $destacado,
+                'tiene_imagen' => $tiene_imagen
             ];
 
-            // ✅ USAR LOS NUEVOS MÉTODOS readAllFiltered y countFiltered
+            // USAR LOS MÉTODOS readAllFiltered y countFiltered
             $productos = $producto->readAllFiltered($limit, $offset, $filtros);
             $total = $producto->countFiltered($filtros);
 

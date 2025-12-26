@@ -15,6 +15,12 @@ class CategoriaController {
      */
     public function create() {
         try {
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Se requieren permisos de administrador.', 403);
+                return;
+            }
+
             // Obtener datos JSON
             $input = json_decode(file_get_contents('php://input'), true);
             
@@ -152,6 +158,12 @@ class CategoriaController {
      */
     public function update() {
         try {
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Se requieren permisos de administrador.', 403);
+                return;
+            }
+
             // Obtener ID del query string
             $id = $_GET['id'] ?? '';
             
@@ -229,6 +241,12 @@ class CategoriaController {
      */
     public function delete() {
         try {
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Se requieren permisos de administrador.', 403);
+                return;
+            }
+
             // Obtener ID del query string
             $id = $_GET['id'] ?? '';
             
@@ -301,12 +319,29 @@ class CategoriaController {
     }
     
     /**
-     * Verificar que el usuario sea admin (placeholder por ahora)
+     * Iniciar sesión con configuración CORS
+     */
+    private function startSessionWithCORS() {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_set_cookie_params([
+                'lifetime' => 0,
+                'path' => '/',
+                'domain' => '',
+                'secure' => false,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]);
+            session_start();
+        }
+    }
+
+    /**
+     * Verificar que el usuario sea admin
      */
     private function isAdmin() {
-        // TODO: Implementar lógica de verificación de admin
-        // Por ahora devuelve true para desarrollo
-        return true;
+        $this->startSessionWithCORS();
+        $user_type = $_SESSION['user_type'] ?? null;
+        return $user_type == 2; // Tipo 2 = Admin
     }
     
     /**

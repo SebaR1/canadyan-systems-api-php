@@ -137,14 +137,16 @@ class Producto {
 
     /**
      * Leer productos con filtros avanzados (para admin)
-     * Soporta filtros de búsqueda, categoría y estado
+     * Soporta filtros de búsqueda, categoría, estado, destacado y tiene_imagen
      */
     public function readAllFiltered($limit = null, $offset = 0, $filters = []) {
         try {
             // Extraer filtros
             $search = $filters['search'] ?? '';
             $categoria_id = $filters['categoria_id'] ?? null;
-            $activo = $filters['activo'] ?? null; // null = todos, 1 = activos, 0 = inactivos
+            $activo = $filters['activo'] ?? null;
+            $destacado = $filters['destacado'] ?? null;
+            $tiene_imagen = $filters['tiene_imagen'] ?? null;
             
             // Construir WHERE clause dinámicamente
             $whereConditions = [];
@@ -186,6 +188,21 @@ class Producto {
             if ($activo !== null) {
                 $whereConditions[] = "p.activo = ?";
                 $params[] = intval($activo);
+            }
+            
+            if ($destacado !== null) {
+                $whereConditions[] = "p.destacado = ?";
+                $params[] = intval($destacado);
+            }
+            
+            if ($tiene_imagen !== null) {
+                if ($tiene_imagen == 1) {
+                    // Con imagen: pi.url IS NOT NULL
+                    $whereConditions[] = "pi.url IS NOT NULL";
+                } else {
+                    // Sin imagen: pi.url IS NULL
+                    $whereConditions[] = "pi.url IS NULL";
+                }
             }
             
             // Construir query
@@ -249,6 +266,8 @@ class Producto {
             $search = $filters['search'] ?? '';
             $categoria_id = $filters['categoria_id'] ?? null;
             $activo = $filters['activo'] ?? null;
+            $destacado = $filters['destacado'] ?? null;
+            $tiene_imagen = $filters['tiene_imagen'] ?? null;
             
             // Construir WHERE clause
             $whereConditions = [];
@@ -256,7 +275,7 @@ class Producto {
             
             if (!empty($search)) {
                 $searchPattern = '%' . htmlspecialchars(strip_tags($search)) . '%';
-                $whereConditions[] = "(nombre LIKE ? OR descripcion LIKE ?)";
+                $whereConditions[] = "(p.nombre LIKE ? OR p.descripcion LIKE ?)";
                 $params[] = $searchPattern;
                 $params[] = $searchPattern;
             }
@@ -289,10 +308,36 @@ class Producto {
                 $whereConditions[] = "p.activo = ?";
                 $params[] = intval($activo);
             }
+            
+            if ($destacado !== null) {
+                $whereConditions[] = "p.destacado = ?";
+                $params[] = intval($destacado);
+            }
+            
+            if ($tiene_imagen !== null) {
+                if ($tiene_imagen == 1) {
+                    $whereConditions[] = "pi.url IS NOT NULL";
+                } else {
+                    $whereConditions[] = "pi.url IS NULL";
+                }
+            }
 
             $whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
 
-            $query = "SELECT COUNT(*) as total FROM " . $this->table_name . " p " . $whereClause;
+            $query = "SELECT COUNT(DISTINCT p.id) as total 
+                    FROM " . $this->table_name . " p
+                    LEFT JOIN (
+                        SELECT producto_id, url 
+                        FROM producto_imagenes 
+                        WHERE tipo = 'principal' 
+                            OR id IN (
+                                SELECT MIN(id) 
+                                FROM producto_imagenes 
+                                GROUP BY producto_id
+                            )
+                        GROUP BY producto_id
+                    ) pi ON p.id = pi.producto_id
+                    " . $whereClause;
             
             $stmt = $this->conn->prepare($query);
             
