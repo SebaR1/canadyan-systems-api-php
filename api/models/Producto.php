@@ -460,7 +460,7 @@ public function getByCategory($categoryId, $limit = null, $offset = 0) {
             // Preparar término de búsqueda
             $searchPattern = '%' . htmlspecialchars(strip_tags($searchTerm)) . '%';
             
-            $query = "SEL ECT p.id, p.nombre, p.descripcion, p.precio, p.stock, 
+            $query = "SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock,
                             p.categoria_id, p.sku, p.activo, p.destacado, p.created_at, p.updated_at,
                             c.nombre as categoria_nombre,
                             pi.url as imagen_principal_url

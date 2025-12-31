@@ -44,8 +44,17 @@ class Categoria {
                     $counter++;
                 }
             }
-            
-            $query = "INSERT INTO " . $this->table_name . " 
+
+            // Validar profundidad máxima (3 niveles)
+            if ($this->parent_id) {
+                $depth = $this->getDepth($this->parent_id);
+                if ($depth >= 2) {
+                    error_log("Error: No se puede crear categoría. Profundidad máxima (3 niveles) alcanzada");
+                    return false;
+                }
+            }
+
+            $query = "INSERT INTO " . $this->table_name . "
                       SET nombre=:nombre, slug=:slug, parent_id=:parent_id";
             
             $stmt = $this->conn->prepare($query);
@@ -184,7 +193,16 @@ class Categoria {
                     $counter++;
                 }
             }
-            
+
+            // Validar profundidad máxima (3 niveles)
+            if ($this->parent_id) {
+                $depth = $this->getDepth($this->parent_id);
+                if ($depth >= 2) {
+                    error_log("Error: No se puede actualizar categoría. Profundidad máxima (3 niveles) alcanzada");
+                    return false;
+                }
+            }
+
             $query = "UPDATE " . $this->table_name . " 
                       SET nombre = :nombre, 
                           slug = :slug, 
@@ -326,5 +344,27 @@ class Categoria {
         $result = $stmt->fetch(PDO::FETCH_ASSOC);
         
         return $result['count'] > 0;
+    }
+
+    /**
+     * Obtener profundidad de una categoría en el árbol
+     * @param int $categoria_id ID de la categoría
+     * @return int Profundidad (0 = raíz, 1 = nivel 1, 2 = nivel 2)
+     */
+    private function getDepth($categoria_id) {
+        if (!$categoria_id) return 0;
+
+        $query = "SELECT parent_id FROM " . $this->table_name . " WHERE id = ?";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(1, $categoria_id);
+        $stmt->execute();
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row || !$row['parent_id']) {
+            return 0;
+        }
+
+        return 1 + $this->getDepth($row['parent_id']);
     }
 }
