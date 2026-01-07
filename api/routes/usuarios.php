@@ -56,14 +56,14 @@ if (session_status() === PHP_SESSION_NONE) {
         'lifetime' => 0,
         'path' => '/',
         'domain' => '',
-        'secure' => false,      // En desarrollo HTTP
+        'secure' => true,       // Producción HTTPS
         'httponly' => true,
         'samesite' => 'Lax' // Cambiar a 'None' en producción con HTTP
     ]);
 
 
 ini_set('session.cookie_samesite', 'Lax');   // ✅
-    ini_set('session.cookie_secure', '0'); // En producción cambiar a '1' (requiere HTTPS)
+    ini_set('session.cookie_secure', '1'); // Producción HTTPS
     ini_set('session.cookie_httponly', '1');
     ini_set('session.cookie_path', '/'); // AGREGAR ESTA LÍNEA
     

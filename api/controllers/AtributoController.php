@@ -520,7 +520,7 @@ class AtributoController {
                 'lifetime' => 0,
                 'path' => '/',
                 'domain' => '',
-                'secure' => false,
+                'secure' => true, // Producción HTTPS
                 'httponly' => true,
                 'samesite' => 'Lax'
             ]);

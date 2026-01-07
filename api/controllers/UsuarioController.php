@@ -601,7 +601,7 @@ class UsuarioController {
                 'lifetime' => 0,
                 'path' => '/',
                 'domain' => '',
-                'secure' => false, // Cambiar a true en producción con HTTPS
+                'secure' => true, // Producción HTTPS
                 'httponly' => true,
                 'samesite' => 'Lax' // Cambiar a 'Strict' si es necesario
             ]);
