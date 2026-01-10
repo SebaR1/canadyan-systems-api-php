@@ -11,7 +11,7 @@ require_once __DIR__ . '/../utils/ImageValidator.php';
 
 class ProductoImagenController {
     
-    private $uploadDir = __DIR__ . '/../../public/uploads/productos/';
+    private $uploadDir = __DIR__ . '/../../uploads/productos/';
     private $uploadUrl = 'uploads/productos/';
     private $maxFileSize = 5242880; // 5MB en bytes
     private $maxImagenes = 10;
