@@ -27,6 +27,7 @@ class Usuario {
     public $tipo_usuario_id;
     public $created_at;
     public $updated_at;
+    public $deleted_at;
     
     // Constructor
     public function __construct() {
@@ -160,33 +161,39 @@ class Usuario {
     public function update() {
         $query = "UPDATE " . $this->table_name . "
                   SET nombre=:nombre, apellido=:apellido, razon_social_empresa=:razon_social_empresa,
+                      cuit=:cuit, correo_electronico=:correo_electronico,
                       celular=:celular, ciudad=:ciudad, direccion=:direccion, provincia=:provincia,
-                      cod_imagen=:cod_imagen
+                      cod_imagen=:cod_imagen, tipo_usuario_id=:tipo_usuario_id
                   WHERE id=:id";
-        
+
         $stmt = $this->conn->prepare($query);
-        
+
         // Limpiar datos
         $this->nombre = htmlspecialchars(strip_tags($this->nombre));
         $this->apellido = htmlspecialchars(strip_tags($this->apellido));
         $this->razon_social_empresa = htmlspecialchars(strip_tags($this->razon_social_empresa));
+        $this->cuit = htmlspecialchars(strip_tags($this->cuit));
+        $this->correo_electronico = htmlspecialchars(strip_tags($this->correo_electronico));
         $this->celular = htmlspecialchars(strip_tags($this->celular));
         $this->ciudad = htmlspecialchars(strip_tags($this->ciudad));
         $this->direccion = htmlspecialchars(strip_tags($this->direccion));
         $this->provincia = htmlspecialchars(strip_tags($this->provincia));
         $this->cod_imagen = htmlspecialchars(strip_tags($this->cod_imagen));
-        
+
         // Bind de valores
         $stmt->bindParam(":nombre", $this->nombre);
         $stmt->bindParam(":apellido", $this->apellido);
         $stmt->bindParam(":razon_social_empresa", $this->razon_social_empresa);
+        $stmt->bindParam(":cuit", $this->cuit);
+        $stmt->bindParam(":correo_electronico", $this->correo_electronico);
         $stmt->bindParam(":celular", $this->celular);
         $stmt->bindParam(":ciudad", $this->ciudad);
         $stmt->bindParam(":direccion", $this->direccion);
         $stmt->bindParam(":provincia", $this->provincia);
         $stmt->bindParam(":cod_imagen", $this->cod_imagen);
+        $stmt->bindParam(":tipo_usuario_id", $this->tipo_usuario_id);
         $stmt->bindParam(":id", $this->id);
-        
+
         return $stmt->execute();
     }
     
@@ -233,19 +240,20 @@ class Usuario {
                         u.correo_electronico, u.celular, u.ciudad, u.provincia,
                         u.email_verificado, u.tipo_usuario_id, tu.nombre as tipo_usuario_nombre, u.created_at
                 FROM " . $this->table_name . " u
-                LEFT JOIN tipos_usuario tu ON u.tipo_usuario_id = tu.id";
-        
+                LEFT JOIN tipos_usuario tu ON u.tipo_usuario_id = tu.id
+                WHERE u.deleted_at IS NULL";
+
         // Agregar búsqueda si se proporciona
         $where_clause = "";
         if (!empty($search)) {
             // ✅ SOLUCION: Usar placeholders únicos para cada campo
-            $where_clause = " WHERE (u.nombre LIKE :search1 OR u.apellido LIKE :search2 
+            $where_clause = " AND (u.nombre LIKE :search1 OR u.apellido LIKE :search2
                                 OR u.correo_electronico LIKE :search3 OR u.cuit LIKE :search4
                                 OR u.razon_social_empresa LIKE :search5)";
         }
         
         // Query para contar total
-        $count_query = "SELECT COUNT(*) as total FROM " . $this->table_name . " u" . $where_clause;
+        $count_query = "SELECT COUNT(*) as total FROM " . $this->table_name . " u WHERE u.deleted_at IS NULL" . $where_clause;
         
         // Query final con paginación
         $query .= $where_clause . " ORDER BY u.created_at DESC LIMIT :limit OFFSET :offset";
@@ -376,13 +384,28 @@ class Usuario {
     }
     
     /**
-     * Eliminar usuario
+     * Eliminar usuario (soft delete)
      */
     public function delete() {
-        $query = "DELETE FROM " . $this->table_name . " WHERE id = :id";
+        $query = "UPDATE " . $this->table_name . "
+                  SET deleted_at = NOW()
+                  WHERE id = :id AND deleted_at IS NULL";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":id", $this->id);
-        
+
+        return $stmt->execute();
+    }
+
+    /**
+     * Restaurar usuario eliminado
+     */
+    public function restore() {
+        $query = "UPDATE " . $this->table_name . "
+                  SET deleted_at = NULL
+                  WHERE id = :id";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":id", $this->id);
+
         return $stmt->execute();
     }
     

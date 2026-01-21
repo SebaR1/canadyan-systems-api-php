@@ -209,29 +209,47 @@ class UsuarioController {
             }
             
             // Verificar autenticación
-            $user_id = $this->getAuthenticatedUserId();
-            if (!$user_id) {
+            $authenticated_user_id = $this->getAuthenticatedUserId();
+            if (!$authenticated_user_id) {
                 Response::error('No autorizado', 401);
                 return;
             }
-            
+
             // Obtener datos JSON
             $input = json_decode(file_get_contents('php://input'), true);
-            
+
             if (!$input) {
                 Response::error('Datos JSON inválidos', 400);
                 return;
             }
-            
+
+            // Si es admin y viene un ID en la URL, editar ese usuario. Si no, editar el propio.
+            $target_user_id = $authenticated_user_id;
+            if ($this->isAdmin() && isset($_GET['id'])) {
+                $target_user_id = $_GET['id'];
+            }
+
+            // LOG: Ver qué datos llegaron
+            error_log("========== UPDATE PROFILE DEBUG ==========");
+            error_log("Authenticated User ID: " . $authenticated_user_id);
+            error_log("Target User ID: " . $target_user_id);
+            error_log("Is Admin: " . ($this->isAdmin() ? 'YES' : 'NO'));
+            error_log("Input data: " . json_encode($input));
+
             // Crear instancia del modelo
             $usuario = new Usuario();
-            $usuario->id = $user_id;
-            
+            $usuario->id = $target_user_id;
+
             // Verificar que el usuario existe
             if (!$usuario->readOne()) {
                 Response::error('Usuario no encontrado', 404);
                 return;
             }
+
+            // LOG: Ver datos actuales del usuario
+            error_log("Current CUIT: " . $usuario->cuit);
+            error_log("Current Email: " . $usuario->correo_electronico);
+            error_log("Current Type: " . $usuario->tipo_usuario_id);
             
             // Asignar nuevos valores
             $usuario->nombre = $input['nombre'] ?? $usuario->nombre;
@@ -242,12 +260,82 @@ class UsuarioController {
             $usuario->direccion = $input['direccion'] ?? $usuario->direccion;
             $usuario->provincia = $input['provincia'] ?? $usuario->provincia;
             $usuario->cod_imagen = $input['imagen'] ?? $usuario->cod_imagen;
-            
+
+            // Si es admin, permitir editar campos bloqueados
+            if ($this->isAdmin()) {
+                error_log(">>> ADMIN DETECTED - Processing admin fields");
+
+                // CUIT - validar que no exista para otro usuario
+                if (isset($input['cuit'])) {
+                    error_log("CUIT in input: " . $input['cuit']);
+                    if ($input['cuit'] !== $usuario->cuit) {
+                        error_log("CUIT is different, checking if exists for other users...");
+                        $existingUser = $usuario->findByCuit($input['cuit']);
+                        if ($existingUser && $existingUser['id'] != $target_user_id) {
+                            error_log("CUIT already exists for user ID: " . $existingUser['id']);
+                            Response::error('El CUIT ya está registrado para otro usuario', 409);
+                            return;
+                        }
+                        error_log("CUIT is valid, updating to: " . $input['cuit']);
+                        $usuario->cuit = $input['cuit'];
+                    } else {
+                        error_log("CUIT is the same, no change needed");
+                    }
+                } else {
+                    error_log("CUIT not present in input");
+                }
+
+                // Email - validar que no exista para otro usuario
+                if (isset($input['correoElectronico'])) {
+                    error_log("Email in input: " . $input['correoElectronico']);
+                    if ($input['correoElectronico'] !== $usuario->correo_electronico) {
+                        error_log("Email is different, checking if exists for other users...");
+                        $existingUser = $usuario->findByEmail($input['correoElectronico']);
+                        if ($existingUser && $existingUser['id'] != $target_user_id) {
+                            error_log("Email already exists for user ID: " . $existingUser['id']);
+                            Response::error('El correo electrónico ya está registrado para otro usuario', 409);
+                            return;
+                        }
+                        error_log("Email is valid, updating to: " . $input['correoElectronico']);
+                        $usuario->correo_electronico = $input['correoElectronico'];
+                    } else {
+                        error_log("Email is the same, no change needed");
+                    }
+                } else {
+                    error_log("Email not present in input");
+                }
+
+                // Tipo de usuario
+                if (isset($input['tipoUsuarioId'])) {
+                    error_log("User Type in input: " . $input['tipoUsuarioId']);
+                    $usuario->tipo_usuario_id = intval($input['tipoUsuarioId']);
+                    error_log("User Type updated to: " . $usuario->tipo_usuario_id);
+                } else {
+                    error_log("User Type not present in input");
+                }
+            } else {
+                error_log(">>> NOT ADMIN - Skipping admin fields");
+            }
+
+            // LOG: Ver valores antes de update
+            error_log("BEFORE UPDATE:");
+            error_log("  CUIT: " . $usuario->cuit);
+            error_log("  Email: " . $usuario->correo_electronico);
+            error_log("  Type: " . $usuario->tipo_usuario_id);
+
             // Actualizar usuario
             if ($usuario->update()) {
+                error_log("UPDATE SUCCESS");
                 $userData = $usuario->readOne();
+                error_log("AFTER READONE:");
+                error_log("  CUIT: " . $userData['cuit']);
+                error_log("  Email: " . $userData['correo_electronico']);
+                error_log("  Type: " . $userData['tipo_usuario_id']);
+                error_log("==========================================");
                 Response::success('Perfil actualizado exitosamente', 200, ['usuario' => $userData]);
             } else {
+                error_log("UPDATE FAILED");
+                error_log("==========================================");
                 Response::error('Error al actualizar el perfil', 500);
             }
             
@@ -443,24 +531,27 @@ class UsuarioController {
                 Response::error('Método no permitido', 405);
                 return;
             }
-            
+
             // Verificar que sea admin
             if (!$this->isAdmin()) {
                 Response::error('Acceso denegado. Solo administradores', 403);
                 return;
             }
-            
+
             // Obtener datos JSON
             $input = json_decode(file_get_contents('php://input'), true);
-            
+
             if (!$input) {
                 Response::error('Datos JSON inválidos', 400);
                 return;
             }
-            
+
             // Crear instancia del modelo
             $usuario = new Usuario();
-            
+
+            // Contraseña predefinida
+            $generated_password = 'password123';
+
             // Asignar valores
             $usuario->nombre = $input['nombre'] ?? '';
             $usuario->apellido = $input['apellido'] ?? '';
@@ -472,41 +563,42 @@ class UsuarioController {
             $usuario->direccion = $input['direccion'] ?? '';
             $usuario->provincia = $input['provincia'] ?? '';
             $usuario->cod_imagen = $input['imagen'] ?? null;
-            $usuario->password = $input['password'] ?? '';
+            $usuario->password = $generated_password;
             $usuario->tipo_usuario_id = $input['tipoUsuario'] ?? 1; // Admin puede asignar tipo
-            
+
             // Validar datos
             $errors = $usuario->validate();
             if (!empty($errors)) {
                 Response::error('Errores de validación', 400, ['errors' => $errors]);
                 return;
             }
-            
+
             // Verificar si el email ya existe
             if ($usuario->findByEmail($usuario->correo_electronico)) {
                 Response::error('El correo electrónico ya está registrado', 409);
                 return;
             }
-            
+
             // Verificar si el CUIT ya existe
             if ($usuario->findByCuit($usuario->cuit)) {
                 Response::error('El CUIT ya está registrado', 409);
                 return;
             }
-            
+
             // Crear usuario
             if ($usuario->create()) {
                 // Obtener datos del usuario creado (sin contraseña)
                 $usuario_data = $usuario->readOne();
                 unset($usuario_data['password']);
-                
+
                 Response::success('Usuario creado exitosamente por administrador', 201, [
-                    'usuario' => $usuario_data
+                    'usuario' => $usuario_data,
+                    'generated_password' => $generated_password
                 ]);
             } else {
                 Response::error('Error al crear el usuario', 500);
             }
-            
+
         } catch (Exception $e) {
             error_log("Error en adminCreate: " . $e->getMessage());
             Response::error('Error interno del servidor', 500);
@@ -524,24 +616,104 @@ class UsuarioController {
                 Response::error('Método no permitido', 405);
                 return;
             }
-            
+
             // Verificar que sea admin
             if (!$this->isAdmin()) {
                 Response::error('Acceso denegado. Solo administradores', 403);
                 return;
             }
-            
+
             $usuario = new Usuario();
             $stats = $usuario->getStats();
-            
+
             Response::success('Estadísticas obtenidas', 200, ['stats' => $stats]);
-            
+
         } catch (Exception $e) {
             error_log("Error en getStats: " . $e->getMessage());
             Response::error('Error interno del servidor', 500);
         }
     }
+
+    /**
+     * Eliminar usuario (soft delete) - Solo Admin
+     * DELETE /api/routes/usuarios.php?action=delete&id=X
+     */
+    public function deleteUser() {
+        try {
+            // Verificar que sea DELETE
+            if ($_SERVER['REQUEST_METHOD'] !== 'DELETE') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+
+            // Obtener ID del usuario a eliminar
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                Response::error('ID de usuario requerido', 400);
+                return;
+            }
+
+            // Verificar que el usuario existe
+            $usuario = new Usuario();
+            $usuario->id = $id;
+
+            if (!$usuario->readOne()) {
+                Response::error('Usuario no encontrado', 404);
+                return;
+            }
+
+            // Prevenir auto-eliminación
+            $current_user_id = $this->getAuthenticatedUserId();
+            if ($id == $current_user_id) {
+                Response::error('No puedes eliminar tu propia cuenta', 400);
+                return;
+            }
+
+            // Eliminar usuario (soft delete)
+            if ($usuario->delete()) {
+                Response::success('Usuario eliminado exitosamente', 200);
+            } else {
+                Response::error('Error al eliminar usuario', 500);
+            }
+
+        } catch (Exception $e) {
+            error_log("Error en deleteUser: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
     
+    /**
+     * Generar contraseña segura automáticamente
+     */
+    private function generateSecurePassword($length = 12) {
+        $uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        $lowercase = 'abcdefghijklmnopqrstuvwxyz';
+        $numbers = '0123456789';
+        $special = '!@#$%^&*';
+        $all = $uppercase . $lowercase . $numbers . $special;
+
+        $password = '';
+        // Asegurar que tenga al menos uno de cada tipo
+        $password .= $uppercase[random_int(0, strlen($uppercase) - 1)];
+        $password .= $lowercase[random_int(0, strlen($lowercase) - 1)];
+        $password .= $numbers[random_int(0, strlen($numbers) - 1)];
+        $password .= $special[random_int(0, strlen($special) - 1)];
+
+        // Completar el resto
+        for ($i = 4; $i < $length; $i++) {
+            $password .= $all[random_int(0, strlen($all) - 1)];
+        }
+
+        // Mezclar los caracteres
+        return str_shuffle($password);
+    }
+
     /**
      * Verificar si el usuario actual es administrador
      */

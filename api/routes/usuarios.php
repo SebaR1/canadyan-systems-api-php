@@ -339,6 +339,18 @@ try {
             $controller->getStats();
             break;
 
+        /**
+         * Eliminar usuario (soft delete) - Solo Admin
+         * DELETE /api/routes/usuarios.php?action=delete&id=X
+         */
+        case 'delete':
+            if ($_SERVER['REQUEST_METHOD'] !== 'DELETE') {
+                Response::error('Método no permitido. Use DELETE.', 405);
+                break;
+            }
+            $controller->deleteUser();
+            break;
+
         // AGREGAR ESTE CASO AL SWITCH:
         case 'debug-profile':
             $debug_info = [
@@ -376,7 +388,7 @@ try {
             Response::error('Acción no válida', 400, [
                 'available_actions' => [
                     'register',
-                    'login', 
+                    'login',
                     'profile',
                     'update-profile',
                     'change-password',
@@ -385,7 +397,8 @@ try {
                     'test',
                     'list-all',
                     'admin-create',
-                    'stats'
+                    'stats',
+                    'delete'
                 ],
                 'usage' => 'Agregue ?action=nombre_accion a la URL'
             ]);
