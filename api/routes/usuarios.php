@@ -49,24 +49,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 
 // CONFIGURACIÓN DE SESIONES:
-if (session_status() === PHP_SESSION_NONE) {
-    // Configurar cookies de sesión para desarrollo con CORS
-
+// Para 'login' no se inicia sesión aquí: el controller la inicia con lifetime según "recordar contraseña"
+$_action = $_GET['action'] ?? '';
+if ($_action !== 'login' && session_status() === PHP_SESSION_NONE) {
     session_set_cookie_params([
         'lifetime' => 0,
         'path' => '/',
         'domain' => '',
-        'secure' => true,       // Producción HTTPS
+        'secure' => true,
         'httponly' => true,
-        'samesite' => 'Lax' // Cambiar a 'None' en producción con HTTP
+        'samesite' => 'Lax'
     ]);
 
-
-ini_set('session.cookie_samesite', 'Lax');   // ✅
-    ini_set('session.cookie_secure', '1'); // Producción HTTPS
+    ini_set('session.cookie_samesite', 'Lax');
+    ini_set('session.cookie_secure', '1');
     ini_set('session.cookie_httponly', '1');
-    ini_set('session.cookie_path', '/'); // AGREGAR ESTA LÍNEA
-    
+    ini_set('session.cookie_path', '/');
+
     session_start();
 }
 
@@ -351,7 +350,32 @@ try {
             $controller->deleteUser();
             break;
 
-        // AGREGAR ESTE CASO AL SWITCH:
+        /**
+         * Solicitar recuperación de contraseña
+         * POST /api/routes/usuarios.php?action=forgot-password
+         * Body JSON: { "email": "usuario@ejemplo.com" }
+         */
+        case 'forgot-password':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido. Use POST.', 405);
+                break;
+            }
+            $controller->forgotPassword();
+            break;
+
+        /**
+         * Resetear contraseña con token
+         * POST /api/routes/usuarios.php?action=reset-password
+         * Body JSON: { "token": "abc123...", "new_password": "nueva_contra" }
+         */
+        case 'reset-password':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido. Use POST.', 405);
+                break;
+            }
+            $controller->resetPassword();
+            break;
+
         case 'debug-profile':
             $debug_info = [
                 'method' => $_SERVER['REQUEST_METHOD'],

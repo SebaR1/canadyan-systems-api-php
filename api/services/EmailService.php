@@ -475,6 +475,118 @@ class EmailService {
     }
     
     /**
+     * Enviar email de recuperación de contraseña
+     */
+    public function sendPasswordResetEmail($email, $nombre, $token) {
+        try {
+            $this->mailer->clearAddresses();
+            $this->mailer->clearAttachments();
+
+            $this->mailer->setFrom($this->fromEmail, $this->fromName);
+            $this->mailer->addAddress($email, $nombre);
+
+            $this->mailer->Subject = 'Recuperación de contraseña - Canadian Sistemas';
+
+            $appUrl = $_ENV['APP_URL'] ?? 'http://localhost:3000/canadian-sistemas';
+            $resetLink = rtrim($appUrl, '/') . '/reset-password?token=' . $token;
+
+            $this->mailer->isHTML(true);
+            $this->mailer->Body = $this->getPasswordResetTemplate($nombre, $resetLink);
+            $this->mailer->AltBody = $this->getPasswordResetPlainText($nombre, $resetLink);
+
+            return $this->mailer->send();
+
+        } catch (Exception $e) {
+            error_log("Error enviando email de reset: " . $this->mailer->ErrorInfo);
+            return false;
+        }
+    }
+
+    /**
+     * Plantilla HTML para email de recuperación de contraseña
+     */
+    private function getPasswordResetTemplate($nombre, $resetLink) {
+        return "
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='UTF-8'>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333333; margin: 0; padding: 0; background-color: #f4f4f4; }
+                .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                .header { background: #333030; padding: 30px 20px; text-align: center; }
+                .header h1 { color: #ffffff; margin: 0; font-size: 24px; }
+                .content { padding: 30px 20px; }
+                .alert-box { background: #FFF7ED; border-left: 4px solid #F97316; padding: 15px; margin-bottom: 25px; border-radius: 4px; }
+                .alert-box p { margin: 0; color: #9A3412; font-weight: 600; }
+                .text-block { color: #4b5563; margin: 15px 0; }
+                .btn-reset { display: inline-block; background: #F97316; color: #ffffff !important; padding: 14px 36px; text-decoration: none; border-radius: 6px; margin: 25px 0; font-weight: 600; font-size: 16px; }
+                .token-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 15px 20px; margin: 20px 0; text-align: center; }
+                .token-box p { margin: 0; color: #6b7280; font-size: 13px; }
+                .footer { background: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; }
+            </style>
+        </head>
+        <body>
+            <div class='container'>
+                <div class='header'>
+                    <h1>Recuperación de Contraseña</h1>
+                </div>
+                <div class='content'>
+                    <div class='alert-box'>
+                        <p>Se ha solicitado recuperar tu contraseña</p>
+                    </div>
+                    <p class='text-block'>Hola <strong>{$nombre}</strong>,</p>
+                    <p class='text-block'>
+                        Recibiste esta notificación porque se solicitó un cambio de contraseña para tu cuenta.
+                        Si no lo solicitaste tú, puedes ignorar este email.
+                    </p>
+                    <center>
+                        <a href='{$resetLink}' class='btn-reset'>Resetear mi contraseña</a>
+                    </center>
+                    <div class='token-box'>
+                        <p>Este enlace es válido durante <strong>1 hora</strong>.</p>
+                        <p>Si el botón no funciona, copia y pega esta URL en tu navegador:</p>
+                        <p style='word-break: break-all; color: #F97316; font-size: 12px; margin-top: 8px;'>{$resetLink}</p>
+                    </div>
+                    <p class='text-block' style='font-size: 13px; color: #9ca3af;'>
+                        Por seguridad, este enlace expira en 1 hora y solo puede usarse una vez.
+                    </p>
+                </div>
+                <div class='footer'>
+                    <p><strong>Canadian Sistemas</strong> - Seguridad y Control</p>
+                    <p>Este es un mensaje automático. No respondas a este email.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        ";
+    }
+
+    /**
+     * Texto plano para email de recuperación (fallback)
+     */
+    private function getPasswordResetPlainText($nombre, $resetLink) {
+        return "
+RECUPERACIÓN DE CONTRASEÑA - CANADIAN SISTEMAS
+================================================
+
+Hola {$nombre},
+
+Se solicitó un cambio de contraseña para tu cuenta.
+Si no lo solicitaste tú, puedes ignorar este email.
+
+Para resetear tu contraseña, visita el siguiente enlace:
+{$resetLink}
+
+Este enlace es válido durante 1 hora y solo puede usarse una vez.
+
+---
+Canadian Sistemas - Seguridad y Control
+        ";
+    }
+
+    /**
      * Texto plano para email al admin (fallback)
      */
     private function getAdminEmailPlainText($data) {

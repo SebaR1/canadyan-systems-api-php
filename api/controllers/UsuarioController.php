@@ -133,13 +133,17 @@ class UsuarioController {
             // Generar token simple (en producción usar JWT)
             $token = $this->generateToken($userData['id']);
             
-            // Guardar sesión
-            $this->startSessionWithCORS();
+            // Calcular lifetime según "recordar contraseña"
+            $recordar = filter_var($input['recordarPassword'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $lifetime = $recordar ? (30 * 24 * 60 * 60) : 0;
+
+            // Guardar sesión con lifetime apropiado
+            $this->startSessionWithCORS($lifetime);
 
             $_SESSION['user_id'] = $userData['id'];
             $_SESSION['user_email'] = $userData['correo_electronico'];
             $_SESSION['user_type'] = $userData['tipo_usuario_id'];
-            
+
             // Remover contraseña de la respuesta
             unset($userData['password']);
 
@@ -549,8 +553,12 @@ class UsuarioController {
             // Crear instancia del modelo
             $usuario = new Usuario();
 
-            // Contraseña predefinida
-            $generated_password = 'password123';
+            // Contraseña proporcionada por el admin
+            $generated_password = $input['password'] ?? '';
+            if (empty($generated_password)) {
+                Response::error('La contraseña es requerida', 400);
+                return;
+            }
 
             // Asignar valores
             $usuario->nombre = $input['nombre'] ?? '';
@@ -689,6 +697,112 @@ class UsuarioController {
     }
     
     /**
+     * Solicitar recuperación de contraseña
+     * POST /api/routes/usuarios.php?action=forgot-password
+     */
+    public function forgotPassword() {
+        try {
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+
+            $input = json_decode(file_get_contents('php://input'), true);
+            $email = $input['email'] ?? '';
+
+            if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                Response::error('Email válido requerido', 400);
+                return;
+            }
+
+            $usuario = new Usuario();
+            $userData = $usuario->findByEmail($email);
+
+            // Siempre retornar éxito para no revelar si el email existe (anti-enumeración)
+            if (!$userData) {
+                Response::success('Si el email existe en el sistema, se enviará un enlace de recuperación.', 200);
+                return;
+            }
+
+            // Generar token seguro
+            $token = bin2hex(random_bytes(32));
+            $expiresAt = date('Y-m-d H:i:s', strtotime('+1 hour'));
+
+            // Guardar token en BD
+            if (!$usuario->saveResetToken($email, $token, $expiresAt)) {
+                Response::error('Error interno. Intenta nuevamente.', 500);
+                return;
+            }
+
+            // Enviar email con enlace
+            require_once __DIR__ . '/../services/EmailService.php';
+            $emailService = new EmailService();
+            $emailSent = $emailService->sendPasswordResetEmail($email, $userData['nombre'], $token);
+
+            if (!$emailSent) {
+                error_log("Fallo al enviar email de reset a: " . $email);
+            }
+
+            Response::success('Si el email existe en el sistema, se enviará un enlace de recuperación.', 200);
+
+        } catch (Exception $e) {
+            error_log("Error en forgotPassword: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+
+    /**
+     * Resetear contraseña con token
+     * POST /api/routes/usuarios.php?action=reset-password
+     */
+    public function resetPassword() {
+        try {
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+
+            $input = json_decode(file_get_contents('php://input'), true);
+            $token = $input['token'] ?? '';
+            $new_password = $input['new_password'] ?? '';
+
+            if (empty($token)) {
+                Response::error('Token requerido', 400);
+                return;
+            }
+
+            if (empty($new_password) || strlen($new_password) < 6) {
+                Response::error('La contraseña debe tener al menos 6 caracteres', 400);
+                return;
+            }
+
+            $usuario = new Usuario();
+            $userData = $usuario->findByResetToken($token);
+
+            if (!$userData) {
+                Response::error('Token inválido o expirado', 400);
+                return;
+            }
+
+            // Resetear contraseña
+            $usuario->id = $userData['id'];
+            if (!$usuario->changePassword($new_password)) {
+                Response::error('Error al resetear la contraseña', 500);
+                return;
+            }
+
+            // Invalidar token
+            $usuario->clearResetToken();
+
+            Response::success('Contraseña reseteada exitosamente', 200);
+
+        } catch (Exception $e) {
+            error_log("Error en resetPassword: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+
+    /**
      * Generar contraseña segura automáticamente
      */
     private function generateSecurePassword($length = 12) {
@@ -766,18 +880,21 @@ class UsuarioController {
     /**
      * Configurar sesión con parámetros CORS consistentes
      */
-    private function startSessionWithCORS() {
+    private function startSessionWithCORS($lifetime = 0) {
         if (session_status() === PHP_SESSION_NONE) {
-            // Configurar cookies ANTES de session_start()
             session_set_cookie_params([
-                'lifetime' => 0,
+                'lifetime' => $lifetime,
                 'path' => '/',
                 'domain' => '',
-                'secure' => true, // Producción HTTPS
+                'secure' => true,
                 'httponly' => true,
-                'samesite' => 'Lax' // Cambiar a 'Strict' si es necesario
+                'samesite' => 'Lax'
             ]);
-            
+
+            if ($lifetime > 0) {
+                ini_set('session.gc_maxlifetime', $lifetime);
+            }
+
             session_start();
         }
     }

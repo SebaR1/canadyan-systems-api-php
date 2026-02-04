@@ -237,7 +237,7 @@ class Usuario {
         
         // Query base
         $query = "SELECT u.id, u.nombre, u.apellido, u.razon_social_empresa, u.cuit,
-                        u.correo_electronico, u.celular, u.ciudad, u.provincia,
+                        u.correo_electronico, u.celular, u.ciudad, u.direccion, u.provincia,
                         u.email_verificado, u.tipo_usuario_id, tu.nombre as tipo_usuario_nombre, u.created_at
                 FROM " . $this->table_name . " u
                 LEFT JOIN tipos_usuario tu ON u.tipo_usuario_id = tu.id
@@ -409,6 +409,47 @@ class Usuario {
         return $stmt->execute();
     }
     
+    /**
+     * Guardar token de reset de contraseña
+     * REQUIERE en la tabla usuarios:
+     *   ALTER TABLE usuarios ADD COLUMN password_reset_token VARCHAR(255) NULL DEFAULT NULL;
+     *   ALTER TABLE usuarios ADD COLUMN password_reset_expires_at DATETIME NULL DEFAULT NULL;
+     */
+    public function saveResetToken($email, $token, $expiresAt) {
+        $query = "UPDATE " . $this->table_name . "
+                  SET password_reset_token=:token, password_reset_expires_at=:expires_at
+                  WHERE correo_electronico=:email";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":token", $token);
+        $stmt->bindParam(":expires_at", $expiresAt);
+        $stmt->bindParam(":email", $email);
+        return $stmt->execute();
+    }
+
+    /**
+     * Buscar usuario por token de reset (solo si no expiró)
+     */
+    public function findByResetToken($token) {
+        $query = "SELECT id, correo_electronico, nombre FROM " . $this->table_name . "
+                  WHERE password_reset_token=:token AND password_reset_expires_at > NOW()";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":token", $token);
+        $stmt->execute();
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Limpiar token de reset después de uso
+     */
+    public function clearResetToken() {
+        $query = "UPDATE " . $this->table_name . "
+                  SET password_reset_token=NULL, password_reset_expires_at=NULL
+                  WHERE id=:id";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":id", $this->id);
+        return $stmt->execute();
+    }
+
     /**
      * Validar datos del usuario
      */
