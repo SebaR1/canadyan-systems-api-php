@@ -504,9 +504,10 @@ class UsuarioController {
             $page = $_GET['page'] ?? 1;
             $limit = $_GET['limit'] ?? 10;
             $search = $_GET['search'] ?? '';
-            
+            $showDeleted = isset($_GET['deleted']) && $_GET['deleted'] === '1';
+
             $usuario = new Usuario();
-            $usuarios = $usuario->readAll($page, $limit, $search);
+            $usuarios = $usuario->readAll($page, $limit, $search, $showDeleted);
             
             Response::success('Usuarios obtenidos', 200, [
                 'usuarios' => $usuarios['data'],
@@ -695,7 +696,55 @@ class UsuarioController {
             Response::error('Error interno del servidor', 500);
         }
     }
-    
+
+    /**
+     * Restaurar usuario eliminado - Solo Admin
+     * PUT /api/routes/usuarios.php?action=restore&id=X
+     */
+    public function restoreUser() {
+        try {
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                Response::error('ID de usuario requerido', 400);
+                return;
+            }
+
+            $usuario = new Usuario();
+            $usuario->id = $id;
+
+            if (!$usuario->readOne()) {
+                Response::error('Usuario no encontrado', 404);
+                return;
+            }
+
+            // Verificar que no exista otro usuario activo con el mismo email
+            $otro = new Usuario();
+            $existente = $otro->findByEmail($usuario->correo_electronico);
+            if ($existente && $existente['id'] != $id) {
+                Response::error(
+                    'No se puede restaurar: otro usuario activo ya tiene el email ' . $usuario->correo_electronico,
+                    409
+                );
+                return;
+            }
+
+            if ($usuario->restore()) {
+                Response::success('Usuario restaurado exitosamente', 200);
+            } else {
+                Response::error('Error al restaurar usuario', 500);
+            }
+
+        } catch (Exception $e) {
+            error_log("Error en restoreUser: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+
     /**
      * Solicitar recuperación de contraseña
      * POST /api/routes/usuarios.php?action=forgot-password

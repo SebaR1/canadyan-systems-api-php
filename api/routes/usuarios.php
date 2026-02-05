@@ -351,6 +351,18 @@ try {
             break;
 
         /**
+         * Restaurar usuario eliminado (Solo Admin)
+         * PUT /api/routes/usuarios.php?action=restore&id=X
+         */
+        case 'restore':
+            if ($_SERVER['REQUEST_METHOD'] !== 'PUT') {
+                Response::error('Método no permitido. Use PUT.', 405);
+                break;
+            }
+            $controller->restoreUser();
+            break;
+
+        /**
          * Solicitar recuperación de contraseña
          * POST /api/routes/usuarios.php?action=forgot-password
          * Body JSON: { "email": "usuario@ejemplo.com" }

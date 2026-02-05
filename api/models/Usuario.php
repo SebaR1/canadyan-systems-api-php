@@ -134,7 +134,7 @@ class Usuario {
                          tu.nombre as tipo_usuario_nombre, u.created_at, u.updated_at
                   FROM " . $this->table_name . " u
                   LEFT JOIN tipos_usuario tu ON u.tipo_usuario_id = tu.id
-                  WHERE u.correo_electronico = :email LIMIT 0,1";
+                  WHERE u.correo_electronico = :email AND u.deleted_at IS NULL LIMIT 0,1";
         
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":email", $email);
@@ -232,16 +232,18 @@ class Usuario {
     /**
      * Listar todos los usuarios (para admin) - CORREGIDO
      */
-    public function readAll($page = 1, $limit = 10, $search = '') {
+    public function readAll($page = 1, $limit = 10, $search = '', $showDeleted = false) {
         $offset = ($page - 1) * $limit;
-        
+
+        $deleted_condition = $showDeleted ? "u.deleted_at IS NOT NULL" : "u.deleted_at IS NULL";
+
         // Query base
         $query = "SELECT u.id, u.nombre, u.apellido, u.razon_social_empresa, u.cuit,
                         u.correo_electronico, u.celular, u.ciudad, u.direccion, u.provincia,
-                        u.email_verificado, u.tipo_usuario_id, tu.nombre as tipo_usuario_nombre, u.created_at
+                        u.email_verificado, u.tipo_usuario_id, tu.nombre as tipo_usuario_nombre, u.created_at, u.deleted_at
                 FROM " . $this->table_name . " u
                 LEFT JOIN tipos_usuario tu ON u.tipo_usuario_id = tu.id
-                WHERE u.deleted_at IS NULL";
+                WHERE " . $deleted_condition;
 
         // Agregar búsqueda si se proporciona
         $where_clause = "";
@@ -253,7 +255,7 @@ class Usuario {
         }
         
         // Query para contar total
-        $count_query = "SELECT COUNT(*) as total FROM " . $this->table_name . " u WHERE u.deleted_at IS NULL" . $where_clause;
+        $count_query = "SELECT COUNT(*) as total FROM " . $this->table_name . " u WHERE " . $deleted_condition . $where_clause;
         
         // Query final con paginación
         $query .= $where_clause . " ORDER BY u.created_at DESC LIMIT :limit OFFSET :offset";
