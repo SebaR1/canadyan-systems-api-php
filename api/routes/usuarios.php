@@ -13,16 +13,101 @@
  * GET  /api/routes/usuarios.php?action=verify-email&token=xyz
  */
 
-// Headers CORS y configuración inicial
+// === CONFIGURACIÓN DE CORS ===
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *'); // Cambiar por tu dominio en producción
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
 
-// Manejar preflight requests
+// Lista blanca de orígenes permitidos
+$allowedOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://canadian.com.ar',
+    'https://www.canadian.com.ar',
+    'https://canadian.com.ar/canadian-sistemas',
+    'https://www.canadian.com.ar/canadian-sistemas',
+];
+
+// Detectar origen de la solicitud
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+
+// Si el origen está permitido, habilitar CORS
+if (in_array($origin, $allowedOrigins)) {
+    header("Access-Control-Allow-Origin: $origin");
+    header("Access-Control-Allow-Credentials: true");
+} else {
+    // Si no coincide, por seguridad no habilitamos nada (sin error explícito)
+    header("Access-Control-Allow-Origin: null");
+}
+
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+
+// Preflight (OPTIONS)
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    header('Access-Control-Max-Age: 86400');
     http_response_code(200);
+    exit();
+}
+
+
+// CONFIGURACIÓN DE SESIONES:
+// Para 'login' no se inicia sesión aquí: el controller la inicia con lifetime según "recordar contraseña"
+$_action = $_GET['action'] ?? '';
+if ($_action !== 'login' && session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'domain' => '',
+        'secure' => true,
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
+
+    ini_set('session.cookie_samesite', 'Lax');
+    ini_set('session.cookie_secure', '1');
+    ini_set('session.cookie_httponly', '1');
+    ini_set('session.cookie_path', '/');
+
+    session_start();
+}
+
+// Manejar preflight OPTIONS request
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+// ENDPOINT DE DEBUG (opcional, para verificar sesión)
+if (isset($_GET['action']) && $_GET['action'] === 'debug-session') {
+    $debug_info = [
+        'session_status' => session_status(),
+        'session_id' => session_id(),
+        'session_data' => $_SESSION ?? [],
+        'cookies' => $_COOKIE ?? [],
+        'user_id' => $_SESSION['user_id'] ?? 'NO_SET',
+        'user_email' => $_SESSION['user_email'] ?? 'NO_SET'
+    ];
+    
+    echo json_encode($debug_info, JSON_PRETTY_PRINT);
+    exit();
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'test-write-session') {
+    // Limpiar y escribir sesión de prueba
+    $_SESSION = [];
+    $_SESSION['test_data'] = 'SESION_FUNCIONA';
+    $_SESSION['timestamp'] = time();
+    $_SESSION['session_id'] = session_id();
+    
+    // Forzar escritura de sesión
+    session_write_close();
+    session_start();
+    
+    echo json_encode([
+        'message' => 'Sesión escrita',
+        'session_id' => session_id(),
+        'session_data' => $_SESSION,
+        'cookie_params' => session_get_cookie_params(),
+        'save_path' => session_save_path()
+    ], JSON_PRETTY_PRINT);
     exit();
 }
 
@@ -197,19 +282,159 @@ try {
             break;
             
         /**
+         * Listar todos los usuarios (Solo Admin)
+         * GET /api/routes/usuarios.php?action=list-all
+         * 
+         * Query params:
+         * - page: número de página (default: 1)
+         * - limit: usuarios por página (default: 10)
+         * - search: término de búsqueda
+         */
+        case 'list-all':
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                Response::error('Método no permitido. Use GET.', 405);
+                break;
+            }
+            $controller->listAll();
+            break;
+            
+        /**
+         * Crear usuario desde panel de admin
+         * POST /api/routes/usuarios.php?action=admin-create
+         * 
+         * Body JSON:
+         * {
+         *   "nombre": "Juan",
+         *   "apellido": "Pérez",
+         *   "razonSocialEmpresa": "Empresa SRL",
+         *   "cuit": "20-12345678-9",
+         *   "correoElectronico": "juan@empresa.com",
+         *   "celular": "11-1234-5678",
+         *   "ciudad": "Buenos Aires",
+         *   "direccion": "Av. Corrientes 1234",
+         *   "provincia": "Buenos Aires",
+         *   "imagen": "codigo_imagen.jpg",
+         *   "password": "mi_password",
+         *   "tipoUsuario": 1
+         * }
+         */
+        case 'admin-create':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido. Use POST.', 405);
+                break;
+            }
+            $controller->adminCreate();
+            break;
+            
+        /**
+         * Obtener estadísticas de usuarios (Solo Admin)
+         * GET /api/routes/usuarios.php?action=stats
+         */
+        case 'stats':
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                Response::error('Método no permitido. Use GET.', 405);
+                break;
+            }
+            $controller->getStats();
+            break;
+
+        /**
+         * Eliminar usuario (soft delete) - Solo Admin
+         * DELETE /api/routes/usuarios.php?action=delete&id=X
+         */
+        case 'delete':
+            if ($_SERVER['REQUEST_METHOD'] !== 'DELETE') {
+                Response::error('Método no permitido. Use DELETE.', 405);
+                break;
+            }
+            $controller->deleteUser();
+            break;
+
+        /**
+         * Restaurar usuario eliminado (Solo Admin)
+         * PUT /api/routes/usuarios.php?action=restore&id=X
+         */
+        case 'restore':
+            if ($_SERVER['REQUEST_METHOD'] !== 'PUT') {
+                Response::error('Método no permitido. Use PUT.', 405);
+                break;
+            }
+            $controller->restoreUser();
+            break;
+
+        /**
+         * Solicitar recuperación de contraseña
+         * POST /api/routes/usuarios.php?action=forgot-password
+         * Body JSON: { "email": "usuario@ejemplo.com" }
+         */
+        case 'forgot-password':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido. Use POST.', 405);
+                break;
+            }
+            $controller->forgotPassword();
+            break;
+
+        /**
+         * Resetear contraseña con token
+         * POST /api/routes/usuarios.php?action=reset-password
+         * Body JSON: { "token": "abc123...", "new_password": "nueva_contra" }
+         */
+        case 'reset-password':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido. Use POST.', 405);
+                break;
+            }
+            $controller->resetPassword();
+            break;
+
+        case 'debug-profile':
+            $debug_info = [
+                'method' => $_SERVER['REQUEST_METHOD'],
+                'session_status' => session_status(),
+                'session_id' => session_id(),
+                'session_data' => $_SESSION ?? [],
+                'cookies_received' => $_COOKIE ?? [],
+                'user_id' => $_SESSION['user_id'] ?? 'NOT_SET',
+                'user_email' => $_SESSION['user_email'] ?? 'NOT_SET',
+                'headers' => getallheaders(),
+                'cookie_params' => session_get_cookie_params(),
+                'ini_settings' => [
+                    'samesite' => ini_get('session.cookie_samesite'),
+                    'secure' => ini_get('session.cookie_secure'),
+                    'httponly' => ini_get('session.cookie_httponly')
+                ]
+            ];
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Debug info',
+                'data' => $debug_info
+            ], JSON_PRETTY_PRINT);
+            exit();
+            break;
+
+            
+        /**
          * Acción no encontrada
          */
+
+        
         default:
             Response::error('Acción no válida', 400, [
                 'available_actions' => [
                     'register',
-                    'login', 
+                    'login',
                     'profile',
                     'update-profile',
                     'change-password',
                     'logout',
                     'verify-email',
-                    'test'
+                    'test',
+                    'list-all',
+                    'admin-create',
+                    'stats',
+                    'delete'
                 ],
                 'usage' => 'Agregue ?action=nombre_accion a la URL'
             ]);

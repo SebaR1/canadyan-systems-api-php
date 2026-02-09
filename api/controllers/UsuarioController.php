@@ -133,15 +133,24 @@ class UsuarioController {
             // Generar token simple (en producción usar JWT)
             $token = $this->generateToken($userData['id']);
             
-            // Guardar sesión
-            session_start();
+            // Calcular lifetime según "recordar contraseña"
+            $recordar = filter_var($input['recordarPassword'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $lifetime = $recordar ? (30 * 24 * 60 * 60) : 0;
+
+            // Guardar sesión con lifetime apropiado
+            $this->startSessionWithCORS($lifetime);
+
             $_SESSION['user_id'] = $userData['id'];
             $_SESSION['user_email'] = $userData['correo_electronico'];
             $_SESSION['user_type'] = $userData['tipo_usuario_id'];
-            
+
             // Remover contraseña de la respuesta
             unset($userData['password']);
-            
+
+            error_log("DEBUG LOGIN - Session ID: " . session_id());
+            error_log("DEBUG LOGIN - Session data: " . print_r($_SESSION, true));
+            error_log("DEBUG LOGIN - Session status: " . session_status());
+                        
             Response::success('Login exitoso', 200, [
                 'usuario' => $userData,
                 'token' => $token,
@@ -204,29 +213,47 @@ class UsuarioController {
             }
             
             // Verificar autenticación
-            $user_id = $this->getAuthenticatedUserId();
-            if (!$user_id) {
+            $authenticated_user_id = $this->getAuthenticatedUserId();
+            if (!$authenticated_user_id) {
                 Response::error('No autorizado', 401);
                 return;
             }
-            
+
             // Obtener datos JSON
             $input = json_decode(file_get_contents('php://input'), true);
-            
+
             if (!$input) {
                 Response::error('Datos JSON inválidos', 400);
                 return;
             }
-            
+
+            // Si es admin y viene un ID en la URL, editar ese usuario. Si no, editar el propio.
+            $target_user_id = $authenticated_user_id;
+            if ($this->isAdmin() && isset($_GET['id'])) {
+                $target_user_id = $_GET['id'];
+            }
+
+            // LOG: Ver qué datos llegaron
+            error_log("========== UPDATE PROFILE DEBUG ==========");
+            error_log("Authenticated User ID: " . $authenticated_user_id);
+            error_log("Target User ID: " . $target_user_id);
+            error_log("Is Admin: " . ($this->isAdmin() ? 'YES' : 'NO'));
+            error_log("Input data: " . json_encode($input));
+
             // Crear instancia del modelo
             $usuario = new Usuario();
-            $usuario->id = $user_id;
-            
+            $usuario->id = $target_user_id;
+
             // Verificar que el usuario existe
             if (!$usuario->readOne()) {
                 Response::error('Usuario no encontrado', 404);
                 return;
             }
+
+            // LOG: Ver datos actuales del usuario
+            error_log("Current CUIT: " . $usuario->cuit);
+            error_log("Current Email: " . $usuario->correo_electronico);
+            error_log("Current Type: " . $usuario->tipo_usuario_id);
             
             // Asignar nuevos valores
             $usuario->nombre = $input['nombre'] ?? $usuario->nombre;
@@ -237,12 +264,82 @@ class UsuarioController {
             $usuario->direccion = $input['direccion'] ?? $usuario->direccion;
             $usuario->provincia = $input['provincia'] ?? $usuario->provincia;
             $usuario->cod_imagen = $input['imagen'] ?? $usuario->cod_imagen;
-            
+
+            // Si es admin, permitir editar campos bloqueados
+            if ($this->isAdmin()) {
+                error_log(">>> ADMIN DETECTED - Processing admin fields");
+
+                // CUIT - validar que no exista para otro usuario
+                if (isset($input['cuit'])) {
+                    error_log("CUIT in input: " . $input['cuit']);
+                    if ($input['cuit'] !== $usuario->cuit) {
+                        error_log("CUIT is different, checking if exists for other users...");
+                        $existingUser = $usuario->findByCuit($input['cuit']);
+                        if ($existingUser && $existingUser['id'] != $target_user_id) {
+                            error_log("CUIT already exists for user ID: " . $existingUser['id']);
+                            Response::error('El CUIT ya está registrado para otro usuario', 409);
+                            return;
+                        }
+                        error_log("CUIT is valid, updating to: " . $input['cuit']);
+                        $usuario->cuit = $input['cuit'];
+                    } else {
+                        error_log("CUIT is the same, no change needed");
+                    }
+                } else {
+                    error_log("CUIT not present in input");
+                }
+
+                // Email - validar que no exista para otro usuario
+                if (isset($input['correoElectronico'])) {
+                    error_log("Email in input: " . $input['correoElectronico']);
+                    if ($input['correoElectronico'] !== $usuario->correo_electronico) {
+                        error_log("Email is different, checking if exists for other users...");
+                        $existingUser = $usuario->findByEmail($input['correoElectronico']);
+                        if ($existingUser && $existingUser['id'] != $target_user_id) {
+                            error_log("Email already exists for user ID: " . $existingUser['id']);
+                            Response::error('El correo electrónico ya está registrado para otro usuario', 409);
+                            return;
+                        }
+                        error_log("Email is valid, updating to: " . $input['correoElectronico']);
+                        $usuario->correo_electronico = $input['correoElectronico'];
+                    } else {
+                        error_log("Email is the same, no change needed");
+                    }
+                } else {
+                    error_log("Email not present in input");
+                }
+
+                // Tipo de usuario
+                if (isset($input['tipoUsuarioId'])) {
+                    error_log("User Type in input: " . $input['tipoUsuarioId']);
+                    $usuario->tipo_usuario_id = intval($input['tipoUsuarioId']);
+                    error_log("User Type updated to: " . $usuario->tipo_usuario_id);
+                } else {
+                    error_log("User Type not present in input");
+                }
+            } else {
+                error_log(">>> NOT ADMIN - Skipping admin fields");
+            }
+
+            // LOG: Ver valores antes de update
+            error_log("BEFORE UPDATE:");
+            error_log("  CUIT: " . $usuario->cuit);
+            error_log("  Email: " . $usuario->correo_electronico);
+            error_log("  Type: " . $usuario->tipo_usuario_id);
+
             // Actualizar usuario
             if ($usuario->update()) {
+                error_log("UPDATE SUCCESS");
                 $userData = $usuario->readOne();
+                error_log("AFTER READONE:");
+                error_log("  CUIT: " . $userData['cuit']);
+                error_log("  Email: " . $userData['correo_electronico']);
+                error_log("  Type: " . $userData['tipo_usuario_id']);
+                error_log("==========================================");
                 Response::success('Perfil actualizado exitosamente', 200, ['usuario' => $userData]);
             } else {
+                error_log("UPDATE FAILED");
+                error_log("==========================================");
                 Response::error('Error al actualizar el perfil', 500);
             }
             
@@ -322,7 +419,21 @@ class UsuarioController {
      */
     public function logout() {
         try {
-            session_start();
+            $this->startSessionWithCORS();
+            
+            // Limpiar datos de sesión
+            $_SESSION = array();
+            
+            // Eliminar la cookie de sesión del navegador
+            if (ini_get("session.use_cookies")) {
+                $params = session_get_cookie_params();
+                setcookie(session_name(), '', time() - 42000,
+                    $params["path"], $params["domain"],
+                    $params["secure"], $params["httponly"]
+                );
+            }
+            
+            // Destruir la sesión
             session_destroy();
             
             Response::success('Logout exitoso', 200);
@@ -372,10 +483,425 @@ class UsuarioController {
     }
     
     /**
+     * Listar todos los usuarios (Solo Admin)
+     * GET /api/routes/usuarios.php?action=list-all
+     */
+    public function listAll() {
+        try {
+            // Verificar que sea GET
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+            
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+            
+            // Obtener parámetros de paginación
+            $page = $_GET['page'] ?? 1;
+            $limit = $_GET['limit'] ?? 10;
+            $search = $_GET['search'] ?? '';
+            $showDeleted = isset($_GET['deleted']) && $_GET['deleted'] === '1';
+
+            $usuario = new Usuario();
+            $usuarios = $usuario->readAll($page, $limit, $search, $showDeleted);
+            
+            Response::success('Usuarios obtenidos', 200, [
+                'usuarios' => $usuarios['data'],
+                'pagination' => [
+                    'page' => $page,
+                    'limit' => $limit,
+                    'total' => $usuarios['total'],
+                    'pages' => ceil($usuarios['total'] / $limit)
+                ]
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("Error en listAll: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+    
+    /**
+     * Crear usuario desde panel de admin
+     * POST /api/routes/usuarios.php?action=admin-create
+     */
+    public function adminCreate() {
+        try {
+            // Verificar que sea POST
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+
+            // Obtener datos JSON
+            $input = json_decode(file_get_contents('php://input'), true);
+
+            if (!$input) {
+                Response::error('Datos JSON inválidos', 400);
+                return;
+            }
+
+            // Crear instancia del modelo
+            $usuario = new Usuario();
+
+            // Contraseña proporcionada por el admin
+            $generated_password = $input['password'] ?? '';
+            if (empty($generated_password)) {
+                Response::error('La contraseña es requerida', 400);
+                return;
+            }
+
+            // Asignar valores
+            $usuario->nombre = $input['nombre'] ?? '';
+            $usuario->apellido = $input['apellido'] ?? '';
+            $usuario->razon_social_empresa = $input['razonSocialEmpresa'] ?? '';
+            $usuario->cuit = $input['cuit'] ?? '';
+            $usuario->correo_electronico = $input['correoElectronico'] ?? '';
+            $usuario->celular = $input['celular'] ?? '';
+            $usuario->ciudad = $input['ciudad'] ?? '';
+            $usuario->direccion = $input['direccion'] ?? '';
+            $usuario->provincia = $input['provincia'] ?? '';
+            $usuario->cod_imagen = $input['imagen'] ?? null;
+            $usuario->password = $generated_password;
+            $usuario->tipo_usuario_id = $input['tipoUsuario'] ?? 1; // Admin puede asignar tipo
+
+            // Validar datos
+            $errors = $usuario->validate();
+            if (!empty($errors)) {
+                Response::error('Errores de validación', 400, ['errors' => $errors]);
+                return;
+            }
+
+            // Verificar si el email ya existe
+            if ($usuario->findByEmail($usuario->correo_electronico)) {
+                Response::error('El correo electrónico ya está registrado', 409);
+                return;
+            }
+
+            // Verificar si el CUIT ya existe
+            if ($usuario->findByCuit($usuario->cuit)) {
+                Response::error('El CUIT ya está registrado', 409);
+                return;
+            }
+
+            // Crear usuario
+            if ($usuario->create()) {
+                // Obtener datos del usuario creado (sin contraseña)
+                $usuario_data = $usuario->readOne();
+                unset($usuario_data['password']);
+
+                Response::success('Usuario creado exitosamente por administrador', 201, [
+                    'usuario' => $usuario_data,
+                    'generated_password' => $generated_password
+                ]);
+            } else {
+                Response::error('Error al crear el usuario', 500);
+            }
+
+        } catch (Exception $e) {
+            error_log("Error en adminCreate: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+    
+    /**
+     * Obtener estadísticas de usuarios (Solo Admin)
+     * GET /api/routes/usuarios.php?action=stats
+     */
+    public function getStats() {
+        try {
+            // Verificar que sea GET
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+
+            $usuario = new Usuario();
+            $stats = $usuario->getStats();
+
+            Response::success('Estadísticas obtenidas', 200, ['stats' => $stats]);
+
+        } catch (Exception $e) {
+            error_log("Error en getStats: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+
+    /**
+     * Eliminar usuario (soft delete) - Solo Admin
+     * DELETE /api/routes/usuarios.php?action=delete&id=X
+     */
+    public function deleteUser() {
+        try {
+            // Verificar que sea DELETE
+            if ($_SERVER['REQUEST_METHOD'] !== 'DELETE') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+
+            // Verificar que sea admin
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+
+            // Obtener ID del usuario a eliminar
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                Response::error('ID de usuario requerido', 400);
+                return;
+            }
+
+            // Verificar que el usuario existe
+            $usuario = new Usuario();
+            $usuario->id = $id;
+
+            if (!$usuario->readOne()) {
+                Response::error('Usuario no encontrado', 404);
+                return;
+            }
+
+            // Prevenir auto-eliminación
+            $current_user_id = $this->getAuthenticatedUserId();
+            if ($id == $current_user_id) {
+                Response::error('No puedes eliminar tu propia cuenta', 400);
+                return;
+            }
+
+            // Eliminar usuario (soft delete)
+            if ($usuario->delete()) {
+                Response::success('Usuario eliminado exitosamente', 200);
+            } else {
+                Response::error('Error al eliminar usuario', 500);
+            }
+
+        } catch (Exception $e) {
+            error_log("Error en deleteUser: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+
+    /**
+     * Restaurar usuario eliminado - Solo Admin
+     * PUT /api/routes/usuarios.php?action=restore&id=X
+     */
+    public function restoreUser() {
+        try {
+            if (!$this->isAdmin()) {
+                Response::error('Acceso denegado. Solo administradores', 403);
+                return;
+            }
+
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                Response::error('ID de usuario requerido', 400);
+                return;
+            }
+
+            $usuario = new Usuario();
+            $usuario->id = $id;
+
+            if (!$usuario->readOne()) {
+                Response::error('Usuario no encontrado', 404);
+                return;
+            }
+
+            // Verificar que no exista otro usuario activo con el mismo email
+            $otro = new Usuario();
+            $existente = $otro->findByEmail($usuario->correo_electronico);
+            if ($existente && $existente['id'] != $id) {
+                Response::error(
+                    'No se puede restaurar: otro usuario activo ya tiene el email ' . $usuario->correo_electronico,
+                    409
+                );
+                return;
+            }
+
+            if ($usuario->restore()) {
+                Response::success('Usuario restaurado exitosamente', 200);
+            } else {
+                Response::error('Error al restaurar usuario', 500);
+            }
+
+        } catch (Exception $e) {
+            error_log("Error en restoreUser: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+
+    /**
+     * Solicitar recuperación de contraseña
+     * POST /api/routes/usuarios.php?action=forgot-password
+     */
+    public function forgotPassword() {
+        try {
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+
+            $input = json_decode(file_get_contents('php://input'), true);
+            $email = $input['email'] ?? '';
+
+            if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                Response::error('Email válido requerido', 400);
+                return;
+            }
+
+            $usuario = new Usuario();
+            $userData = $usuario->findByEmail($email);
+
+            // Siempre retornar éxito para no revelar si el email existe (anti-enumeración)
+            if (!$userData) {
+                Response::success('Si el email existe en el sistema, se enviará un enlace de recuperación.', 200);
+                return;
+            }
+
+            // Generar token seguro
+            $token = bin2hex(random_bytes(32));
+            $expiresAt = date('Y-m-d H:i:s', strtotime('+1 hour'));
+
+            // Guardar token en BD
+            if (!$usuario->saveResetToken($email, $token, $expiresAt)) {
+                Response::error('Error interno. Intenta nuevamente.', 500);
+                return;
+            }
+
+            // Enviar email con enlace
+            require_once __DIR__ . '/../services/EmailService.php';
+            $emailService = new EmailService();
+            $emailSent = $emailService->sendPasswordResetEmail($email, $userData['nombre'], $token);
+
+            if (!$emailSent) {
+                error_log("Fallo al enviar email de reset a: " . $email);
+            }
+
+            Response::success('Si el email existe en el sistema, se enviará un enlace de recuperación.', 200);
+
+        } catch (Exception $e) {
+            error_log("Error en forgotPassword: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+
+    /**
+     * Resetear contraseña con token
+     * POST /api/routes/usuarios.php?action=reset-password
+     */
+    public function resetPassword() {
+        try {
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                Response::error('Método no permitido', 405);
+                return;
+            }
+
+            $input = json_decode(file_get_contents('php://input'), true);
+            $token = $input['token'] ?? '';
+            $new_password = $input['new_password'] ?? '';
+
+            if (empty($token)) {
+                Response::error('Token requerido', 400);
+                return;
+            }
+
+            if (empty($new_password) || strlen($new_password) < 6) {
+                Response::error('La contraseña debe tener al menos 6 caracteres', 400);
+                return;
+            }
+
+            $usuario = new Usuario();
+            $userData = $usuario->findByResetToken($token);
+
+            if (!$userData) {
+                Response::error('Token inválido o expirado', 400);
+                return;
+            }
+
+            // Resetear contraseña
+            $usuario->id = $userData['id'];
+            if (!$usuario->changePassword($new_password)) {
+                Response::error('Error al resetear la contraseña', 500);
+                return;
+            }
+
+            // Invalidar token
+            $usuario->clearResetToken();
+
+            Response::success('Contraseña reseteada exitosamente', 200);
+
+        } catch (Exception $e) {
+            error_log("Error en resetPassword: " . $e->getMessage());
+            Response::error('Error interno del servidor', 500);
+        }
+    }
+
+    /**
+     * Generar contraseña segura automáticamente
+     */
+    private function generateSecurePassword($length = 12) {
+        $uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        $lowercase = 'abcdefghijklmnopqrstuvwxyz';
+        $numbers = '0123456789';
+        $special = '!@#$%^&*';
+        $all = $uppercase . $lowercase . $numbers . $special;
+
+        $password = '';
+        // Asegurar que tenga al menos uno de cada tipo
+        $password .= $uppercase[random_int(0, strlen($uppercase) - 1)];
+        $password .= $lowercase[random_int(0, strlen($lowercase) - 1)];
+        $password .= $numbers[random_int(0, strlen($numbers) - 1)];
+        $password .= $special[random_int(0, strlen($special) - 1)];
+
+        // Completar el resto
+        for ($i = 4; $i < $length; $i++) {
+            $password .= $all[random_int(0, strlen($all) - 1)];
+        }
+
+        // Mezclar los caracteres
+        return str_shuffle($password);
+    }
+
+    /**
+     * Verificar si el usuario actual es administrador
+     */
+    private function isAdmin() {
+        $this->startSessionWithCORS();
+
+        $user_type = $_SESSION['user_type'] ?? null;
+        return $user_type == 2; // Asumiendo que tipo 2 = Admin
+    }
+    
+    /**
+     * Verificar si el usuario actual está autenticado
+     */
+    private function isAuthenticated() {
+        $this->startSessionWithCORS();
+
+        return isset($_SESSION['user_id']);
+    }
+    
+    /**
      * Obtener ID del usuario autenticado
      */
     private function getAuthenticatedUserId() {
-        session_start();
+        $this->startSessionWithCORS();
+
         return $_SESSION['user_id'] ?? null;
     }
     
@@ -398,6 +924,28 @@ class UsuarioController {
         }
         
         return false;
+    }
+
+    /**
+     * Configurar sesión con parámetros CORS consistentes
+     */
+    private function startSessionWithCORS($lifetime = 0) {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_set_cookie_params([
+                'lifetime' => $lifetime,
+                'path' => '/',
+                'domain' => '',
+                'secure' => true,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]);
+
+            if ($lifetime > 0) {
+                ini_set('session.gc_maxlifetime', $lifetime);
+            }
+
+            session_start();
+        }
     }
 }
 ?>

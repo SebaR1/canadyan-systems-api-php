@@ -1,0 +1,11 @@
+# Uploads públicos
+public/uploads/*
+!public/uploads/.gitkeep
+!public/uploads/productos/
+!public/uploads/productos/.gitkeep
+
+# Uploads fuera de public (por si acaso)
+uploads/*
+
+# Env
+api/.env
