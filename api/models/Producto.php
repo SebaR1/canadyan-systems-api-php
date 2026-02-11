@@ -666,25 +666,58 @@ public function getByCategory($categoryId, $limit = null, $offset = 0) {
     }
     
     /**
-     * Eliminar producto (soft delete - cambiar activo a 0)
+     * Eliminar producto permanentemente (hard delete)
+     * Elimina registros hijos y archivos físicos del disco
      */
     public function delete() {
         try {
-            $query = "UPDATE " . $this->table_name . " SET activo = 0 WHERE id = ?";
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(1, $this->id);
-            
-            if ($stmt->execute()) {
-                return true;
+            $this->conn->beginTransaction();
+
+            // 1. Obtener URLs de archivos e imágenes ANTES de borrar registros
+            $archivosStmt = $this->conn->prepare("SELECT url FROM producto_archivos WHERE producto_id = ?");
+            $archivosStmt->bindParam(1, $this->id);
+            $archivosStmt->execute();
+            $archivosUrls = $archivosStmt->fetchAll(\PDO::FETCH_COLUMN);
+
+            $imagenesStmt = $this->conn->prepare("SELECT url FROM producto_imagenes WHERE producto_id = ?");
+            $imagenesStmt->bindParam(1, $this->id);
+            $imagenesStmt->execute();
+            $imagenesUrls = $imagenesStmt->fetchAll(\PDO::FETCH_COLUMN);
+
+            // 2. Eliminar registros de tablas hijas (sin confiar en CASCADE)
+            $tablasHijas = ['producto_archivos', 'producto_imagenes', 'producto_atributos', 'usuario_favoritos'];
+            foreach ($tablasHijas as $tabla) {
+                $stmt = $this->conn->prepare("DELETE FROM {$tabla} WHERE producto_id = ?");
+                $stmt->bindParam(1, $this->id);
+                $stmt->execute();
             }
-            
-            error_log("Error al eliminar producto ID {$this->id}: No se pudo ejecutar la query");
-            return false;
-            
+
+            // 3. Eliminar el producto
+            $stmt = $this->conn->prepare("DELETE FROM " . $this->table_name . " WHERE id = ?");
+            $stmt->bindParam(1, $this->id);
+            $stmt->execute();
+
+            $this->conn->commit();
+
+            // 4. Borrar archivos físicos del disco (después del commit)
+            $baseDir = realpath(__DIR__ . '/../../');
+            foreach (array_merge($archivosUrls, $imagenesUrls) as $url) {
+                if (!empty($url)) {
+                    $filePath = $baseDir . '/' . ltrim($url, '/');
+                    if (file_exists($filePath)) {
+                        unlink($filePath);
+                    }
+                }
+            }
+
+            return true;
+
         } catch (PDOException $e) {
+            $this->conn->rollBack();
             error_log("Error PDO al eliminar producto ID {$this->id}: " . $e->getMessage());
             return false;
         } catch (Exception $e) {
+            $this->conn->rollBack();
             error_log("Error general al eliminar producto ID {$this->id}: " . $e->getMessage());
             return false;
         }

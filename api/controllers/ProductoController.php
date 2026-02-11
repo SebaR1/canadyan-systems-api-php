@@ -328,35 +328,36 @@ class ProductoController {
     }
     
     /**
-     * Eliminar producto (soft delete)
+     * Eliminar producto permanentemente (hard delete)
+     * Elimina el producto, sus relaciones (imágenes, archivos, atributos, favoritos) y archivos físicos del disco
      * DELETE /api/routes/productos.php?action=delete&id=1
      */
     public function delete() {
         try {
             // Obtener ID del query string
             $id = $_GET['id'] ?? '';
-            
+
             if (empty($id) || !is_numeric($id)) {
                 Response::error('ID de producto requerido y debe ser numérico', 400);
                 return;
             }
-            
+
             $producto = new Producto();
             $producto->id = intval($id);
-            
+
             // Verificar que el producto existe
             if (!$producto->readOne()) {
                 Response::error('Producto no encontrado', 404);
                 return;
             }
-            
-            // Eliminar producto (soft delete)
+
+            // Eliminar producto permanentemente
             if ($producto->delete()) {
-                Response::success('Producto eliminado exitosamente', 200);
+                Response::success('Producto eliminado permanentemente', 200);
             } else {
                 Response::error('Error al eliminar el producto', 500);
             }
-            
+
         } catch (Exception $e) {
             error_log("Error en ProductoController::delete: " . $e->getMessage());
             Response::error('Error interno del servidor', 500);
